@@ -15,9 +15,88 @@ pytestmark = pytest.mark.skipif(
     reason="download the SPICE kernels described in backend/kernels/README.md",
 )
 
+# Snapshot from JPL Horizons: target 10/399, topocentric observer coord@301,
+# geodetic SITE_COORD (east longitude, latitude, 0 km), quantity 4, airless.
+# Horizons uses DE441 and apparent directions; this backend uses DE440s and
+# geometric directions, so the comparison below allows a small angular difference.
+HORIZONS_CASES = [
+    (
+        "equator-noon",
+        0,
+        0,
+        "2026-10-03T12:00:00Z",
+        {
+            "sun": (268.956425, 2.374065),
+            "earth": (163.063455, 84.682522),
+        },
+    ),
+    (
+        "equator-sunset",
+        0,
+        0,
+        "2026-10-03T16:30:00Z",
+        {
+            "sun": (268.952991, 0.088674),
+            "earth": (160.434707, 84.823564),
+        },
+    ),
+    (
+        "mid-latitude",
+        20,
+        45,
+        "2026-10-04T06:00:00Z",
+        {
+            "sun": (292.099914, -48.104074),
+            "earth": (244.780449, 41.357761),
+        },
+    ),
+    (
+        "south-pole",
+        -89.5,
+        135,
+        "2026-10-03T18:00:00Z",
+        {
+            "sun": (134.332834, 0.698389),
+            "earth": (226.760415, 4.171660),
+        },
+    ),
+    (
+        "near-pole",
+        -89.9,
+        0,
+        "2026-10-03T00:00:00Z",
+        {
+            "sun": (278.467568, 1.045185),
+            "earth": (1.036680, 5.396450),
+        },
+    ),
+]
+HORIZONS_TOLERANCE_DEGREES = 0.02
+
 
 def _angle_difference(first: float, second: float) -> float:
     return abs((first - second + 180) % 360 - 180)
+
+
+@pytest.mark.parametrize(
+    ("case_name", "latitude", "longitude", "time", "reference"),
+    HORIZONS_CASES,
+    ids=[case[0] for case in HORIZONS_CASES],
+)
+def test_real_positions_match_jpl_horizons(
+    case_name, latitude, longitude, time, reference
+):
+    result = calculate_visibility(latitude, longitude, time)
+
+    for body_name, (reference_azimuth, reference_elevation) in reference.items():
+        body = result[body_name]
+        assert _angle_difference(body["azimuth"], reference_azimuth) < (
+            HORIZONS_TOLERANCE_DEGREES
+        ), case_name
+        assert abs(body["elevation"] - reference_elevation) < (
+            HORIZONS_TOLERANCE_DEGREES
+        ), case_name
+        assert body["visible"] is (reference_elevation > 0)
 
 
 @pytest.mark.parametrize(
