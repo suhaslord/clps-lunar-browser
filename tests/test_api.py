@@ -77,3 +77,31 @@ def test_spice_calculation_error_returns_bad_gateway(monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == "SPICE failed"
+
+
+def test_visibility_window_response_shape(monkeypatch):
+    expected = [
+        {
+            "time": "2026-10-03T18:00:00Z",
+            "sun": {"azimuth": 134.3, "elevation": 0.7, "visible": True},
+            "earth": {"azimuth": 226.8, "elevation": 4.2, "visible": True},
+        }
+    ]
+    monkeypatch.setattr("backend.app.calculate_visibility_window", lambda *_: expected)
+
+    response = client.get(
+        "/api/visibility/window?lat=-89.5&lon=135&start=2026-10-03T18:00:00Z"
+        "&end=2026-10-03T18:00:00Z&step_minutes=30"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_visibility_window_rejects_invalid_step():
+    response = client.get(
+        "/api/visibility/window?lat=0&lon=0&start=2026-10-03T00:00:00Z"
+        "&end=2026-10-03T01:00:00Z&step_minutes=0"
+    )
+
+    assert response.status_code == 422

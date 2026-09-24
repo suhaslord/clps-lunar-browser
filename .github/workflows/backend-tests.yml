@@ -26,5 +26,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: download SPICE kernels
+        run: |
+          mkdir -p backend/kernels
+          curl --fail --location --silent --show-error https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls -o backend/kernels/naif0012.tls
+          curl --fail --location --silent --show-error https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp -o backend/kernels/de440s.bsp
+          curl --fail --location --silent --show-error https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc -o backend/kernels/pck00011.tpc
+          curl --fail --location --silent --show-error https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de440_200625.bpc -o backend/kernels/moon_pa_de440_200625.bpc
+          curl --fail --location --silent --show-error https://naif.jpl.nasa.gov/pub/naif/pds/pds4/clps/clps_spice/spice_kernels/fk/moon_de440_220930.tf -o backend/kernels/moon_de440_220930.tf
+
       - name: run tests
         run: python -m pytest -q
