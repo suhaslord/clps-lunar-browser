@@ -1,0 +1,29 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# node
+node_modules/
+dist/
+build/
+.next/
+
+# editors/os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# local data / downloads
+*.tif
+*.tiff
+*.img
+*.zip
+*.tar
+*.gz
+
+# logs
+*.log
