@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - "suhas/**"
   pull_request:
     branches:
       - main
