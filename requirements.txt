@@ -2,3 +2,5 @@ fastapi
 uvicorn
 numpy
 spiceypy
+pytest
+httpx

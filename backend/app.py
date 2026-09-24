@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
+
+from backend.calculations.sun_earth import SpiceCalculationError, calculate_visibility
+from backend.spice_kernels import KernelError
 
 app = FastAPI(title="CLPS Lunar Browser API")
 
@@ -14,21 +17,11 @@ def visibility(
     lon: float = Query(..., ge=-180, le=180),
     time: str = Query(...),
 ):
-    # placeholder response so frontend can start wiring things up
-    # real SPICE calculations will replace these values
-    return {
-        "site": None,
-        "latitude": lat,
-        "longitude": lon,
-        "time": time,
-        "sun": {
-            "azimuth": None,
-            "elevation": None,
-            "visible": None,
-        },
-        "earth": {
-            "azimuth": None,
-            "elevation": None,
-            "visible": None,
-        },
-    }
+    try:
+        return calculate_visibility(lat, lon, time)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KernelError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SpiceCalculationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

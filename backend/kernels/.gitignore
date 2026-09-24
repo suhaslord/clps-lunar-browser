@@ -1,0 +1,5 @@
+*.tls
+*.bsp
+*.tpc
+*.bpc
+*.tf
