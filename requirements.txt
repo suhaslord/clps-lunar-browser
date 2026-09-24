@@ -4,3 +4,5 @@ numpy
 spiceypy
 pytest
 httpx
+rasterio
+pyproj

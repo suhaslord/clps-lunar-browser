@@ -41,7 +41,7 @@ example:
 }
 ```
 
-Azimuth and elevation are in degrees. For now, `visible` is true when elevation is above the flat local horizon; terrain blocking is not included yet. `site` stays `null` until requests are matched to a named landing site.
+Azimuth and elevation are in degrees. For coordinate requests, `visible` means elevation is above the flat local horizon. `site` is `null` for coordinate requests.
 
 Sun and Earth positions are geometric at the requested timestamp, with no light-time correction.
 
@@ -49,9 +49,15 @@ Invalid coordinates or timestamps return `422`. Missing kernels return `503`, an
 
 ## Landing sites
 
-`GET /api/sites` returns the small set in `data/landing_sites.json`. The listed coordinates use south latitudes as negative numbers and east longitudes as positive numbers. They are projected onto the SPICE lunar reference ellipsoid at zero height; terrain and site elevation are not applied yet.
+`GET /api/sites` returns the small set in `data/landing_sites.json`. The listed coordinates use south latitudes as negative numbers and east longitudes as positive numbers. The SPICE observer is projected onto the reference ellipsoid at zero height.
 
 To calculate a named site, use `GET /api/sites/{site_id}/visibility?time=...`. It returns the same visibility response as `/api/visibility`, with `site` set to the site ID. Unknown IDs return `404`.
+
+Athena has a [LOLA terrain profile](../backend/terrain/README.md). Its Sun and Earth records also include `flat_visible` and `terrain_horizon` (degrees); `visible` compares body elevation with that horizon. The profile uses a 2 m instrument height above the DEM surface. Sites without a profile keep the old flat-horizon response. The DEM frame is DE421 `MOON_ME`, closely aligned with this backend's DE440 `MOON_ME`; see the terrain README for the remaining frame and site-location uncertainty.
+
+`GET /api/sites/{site_id}/visibility/window` takes the same `start`, `end`, and `step_minutes` parameters as the coordinate window and returns the same sample structure, including terrain fields when available.
+
+`GET /api/sites/{site_id}/summary` takes those parameters and returns `sunlight_percent`, `earth_visible_percent`, `both_available_percent`, longest darkness/communication blackout in minutes, and `windows` for sunlight, Earth visibility, and both together. Each window has `start` and `end`. A sample describes the interval from its timestamp to the next step (or requested `end` if sooner). The sample at `end` contributes no duration. Boundaries are only accurate to the requested sampling step; no crossing time is refined. The summary requires `end` after `start`.
 
 ## visibility window request
 
@@ -83,7 +89,7 @@ Example:
 ]
 ```
 
-Invalid coordinates, timestamps, ranges, or steps return `422`. Missing kernels return `503`, and SPICE calculation errors return `502`.
+Invalid coordinates, timestamps, ranges, or steps return `422`. Windows over 2,000 samples return `422`. Missing kernels or an invalid terrain profile return `503`, and SPICE calculation errors return `502`.
 
 ## JPL Horizons check
 

@@ -9,6 +9,7 @@ from backend.spice_kernels import SPICE_LOCK, load_spice_kernels
 
 
 MOON_FRAME = "MOON_ME"
+MAX_WINDOW_SAMPLES = 2000
 
 
 class SpiceCalculationError(RuntimeError):
@@ -127,6 +128,8 @@ def calculate_visibility_window(
         step = timedelta(minutes=step_minutes)
     except OverflowError as exc:
         raise ValueError("step_minutes is too large") from exc
+    if (end_time - start_time) // step + 1 > MAX_WINDOW_SAMPLES:
+        raise ValueError(f"window exceeds {MAX_WINDOW_SAMPLES} samples")
 
     samples = []
     current = start_time
