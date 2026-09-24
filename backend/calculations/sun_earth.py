@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
 
 import numpy as np
@@ -86,8 +86,8 @@ def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> di
                 body_from_site_fixed = j2000_to_fixed @ (moon_to_body - site_j2000)
                 azimuth, elevation = _local_angles(body_from_site_fixed, latitude, longitude)
                 bodies[name] = {
-                    "azimuth": round(azimuth, 4),
-                    "elevation": round(elevation, 4),
+                    "azimuth": azimuth,
+                    "elevation": elevation,
                     "visible": elevation > 0,
                 }
         except SpiceyError as exc:
@@ -101,3 +101,45 @@ def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> di
         "sun": bodies["sun"],
         "earth": bodies["earth"],
     }
+
+
+def calculate_visibility_window(
+    latitude: float,
+    longitude: float,
+    start: str,
+    end: str,
+    step_minutes: int = 30,
+) -> list[dict]:
+    """Calculate visibility at regular UTC times, including end when it lands on the grid."""
+    latitude, longitude = validate_coordinates(latitude, longitude)
+    start_time = parse_utc_time(start)
+    end_time = parse_utc_time(end)
+    if (
+        not isinstance(step_minutes, int)
+        or isinstance(step_minutes, bool)
+        or step_minutes < 1
+    ):
+        raise ValueError("step_minutes must be a positive integer")
+    if end_time < start_time:
+        raise ValueError("end must be at or after start")
+
+    try:
+        step = timedelta(minutes=step_minutes)
+    except OverflowError as exc:
+        raise ValueError("step_minutes is too large") from exc
+
+    samples = []
+    current = start_time
+    while current <= end_time:
+        result = calculate_visibility(latitude, longitude, current.isoformat())
+        samples.append(
+            {
+                "time": result["time"],
+                "sun": result["sun"],
+                "earth": result["earth"],
+            }
+        )
+        if end_time - current < step:
+            break
+        current += step
+    return samples
