@@ -105,3 +105,46 @@ def test_visibility_window_rejects_invalid_step():
     )
 
     assert response.status_code == 422
+
+
+def test_sites_endpoint_lists_landing_sites():
+    response = client.get("/api/sites")
+
+    assert response.status_code == 200
+    sites = response.json()
+    assert [site["id"] for site in sites] == ["odysseus-im1", "athena-im2"]
+    assert sites[0]["latitude"] == -80.13
+    assert sites[0]["longitude"] == 1.44
+
+
+def test_named_site_visibility_uses_site_coordinates(monkeypatch):
+    expected = {
+        "site": None,
+        "latitude": -84.79,
+        "longitude": 29.2,
+        "time": "2026-10-03T18:00:00Z",
+        "sun": {"azimuth": 140.0, "elevation": 1.0, "visible": True},
+        "earth": {"azimuth": 220.0, "elevation": 5.0, "visible": True},
+    }
+    calls = []
+
+    def fake_calculation(latitude, longitude, time):
+        calls.append((latitude, longitude, time))
+        return expected.copy()
+
+    monkeypatch.setattr("backend.app.calculate_visibility", fake_calculation)
+    response = client.get(
+        "/api/sites/athena-im2/visibility?time=2026-10-03T18:00:00Z"
+    )
+
+    assert response.status_code == 200
+    assert calls == [(-84.79, 29.2, "2026-10-03T18:00:00Z")]
+    assert response.json()["site"] == "athena-im2"
+
+
+def test_named_site_visibility_returns_404_for_unknown_site():
+    response = client.get(
+        "/api/sites/no-such-site/visibility?time=2026-10-03T18:00:00Z"
+    )
+
+    assert response.status_code == 404

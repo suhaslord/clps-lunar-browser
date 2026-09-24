@@ -12,7 +12,7 @@ query params:
 - `lon` - lunar longitude in degrees, from -180 to 180
 - `time` - ISO 8601 timestamp with a timezone; results are returned in UTC
 
-Coordinates are interpreted in the lunar mean Earth/rotation-axis frame (`MOON_ME`).
+Coordinates are interpreted in the lunar mean Earth/rotation-axis frame (`MOON_ME`). Longitude is east-positive and accepted from -180 to 180 degrees, matching the backend's coordinate convention.
 
 example:
 
@@ -47,6 +47,12 @@ Sun and Earth positions are geometric at the requested timestamp, with no light-
 
 Invalid coordinates or timestamps return `422`. Missing kernels return `503`, and SPICE calculation errors return `502`.
 
+## Landing sites
+
+`GET /api/sites` returns the small set in `data/landing_sites.json`. The listed coordinates use south latitudes as negative numbers and east longitudes as positive numbers. They are projected onto the SPICE lunar reference ellipsoid at zero height; terrain and site elevation are not applied yet.
+
+To calculate a named site, use `GET /api/sites/{site_id}/visibility?time=...`. It returns the same visibility response as `/api/visibility`, with `site` set to the site ID. Unknown IDs return `404`.
+
 ## visibility window request
 
 `GET /api/visibility/window`
@@ -78,3 +84,9 @@ Example:
 ```
 
 Invalid coordinates, timestamps, ranges, or steps return `422`. Missing kernels return `503`, and SPICE calculation errors return `502`.
+
+## JPL Horizons check
+
+I checked five equator, mid-latitude, and south-pole cases against JPL Horizons using a topocentric lunar observer (`CENTER=coord@301`, geodetic `SITE_COORD` as east longitude, latitude, and zero km). The observer table used quantity 4 (airless apparent azimuth/elevation). Horizons reports apparent positions from DE441; this backend reports geometric positions from the DE440s kernel set, so the values are close rather than identical. Across the five cases, the largest differences were 0.0058° in Sun azimuth, 0.0057° in Sun elevation, 0.0022° in Earth azimuth, and 0.0002° in Earth elevation. The snapshots and a 0.02° tolerance are in `tests/test_spice_calculations.py`; the test suite does not call Horizons.
+
+Reference: [JPL Horizons API](https://ssd-api.jpl.nasa.gov/doc/horizons.html) and [Horizons manual](https://ssd.jpl.nasa.gov/horizons/manual.html).

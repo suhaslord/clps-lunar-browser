@@ -1,8 +1,18 @@
 [
   {
-    "name": "Shackleton Rim",
-    "latitude": null,
-    "longitude": null,
-    "source": null
+    "id": "odysseus-im1",
+    "name": "Odysseus landing site",
+    "latitude": -80.13,
+    "longitude": 1.44,
+    "mission": "IM-1 Odysseus",
+    "source": "https://www.nasa.gov/missions/lro/nasas-lro-images-intuitive-machines-odysseus-lander/"
+  },
+  {
+    "id": "athena-im2",
+    "name": "Athena landing site",
+    "latitude": -84.79,
+    "longitude": 29.20,
+    "mission": "IM-2 Athena",
+    "source": "https://pds.nasa.gov/ds-view/pds/viewContext.jsp?identifier=urn:nasa:pds:context:instrument_host:spacecraft.clps_to_prime1_athena&version=1.0"
   }
 ]

@@ -5,6 +5,7 @@ from backend.calculations.sun_earth import (
     calculate_visibility,
     calculate_visibility_window,
 )
+from backend.landing_sites import get_landing_site, load_landing_sites
 from backend.spice_kernels import KernelError
 
 app = FastAPI(title="CLPS Lunar Browser API")
@@ -13,6 +14,30 @@ app = FastAPI(title="CLPS Lunar Browser API")
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/api/sites")
+def landing_sites():
+    return load_landing_sites()
+
+
+@app.get("/api/sites/{site_id}/visibility")
+def site_visibility(site_id: str, time: str = Query(...)):
+    try:
+        site = get_landing_site(site_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="landing site not found") from exc
+
+    try:
+        result = calculate_visibility(site["latitude"], site["longitude"], time)
+        result["site"] = site_id
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KernelError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SpiceCalculationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/api/visibility")
