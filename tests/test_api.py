@@ -4,9 +4,11 @@ from fastapi.testclient import TestClient
 from backend.app import app
 from backend.calculations.sun_earth import (
     SpiceCalculationError,
+    calculate_visibility,
     parse_utc_time,
     validate_coordinates,
 )
+from backend.spice_kernels import KERNEL_FILES, kernel_directory
 
 
 client = TestClient(app)
@@ -148,3 +150,82 @@ def test_named_site_visibility_returns_404_for_unknown_site():
     )
 
     assert response.status_code == 404
+
+
+KERNELS_AVAILABLE = all((kernel_directory() / name).is_file() for name in KERNEL_FILES)
+
+
+@pytest.mark.skipif(not KERNELS_AVAILABLE, reason="SPICE kernels not installed")
+def test_terrain_site_keeps_spice_angles_and_other_site_uses_flat_horizon():
+    path = "/api/sites/athena-im2/visibility?time=2026-10-03T18:00:00Z"
+    response = client.get(path)
+    assert response.status_code == 200
+    result = response.json()
+    original = calculate_visibility(-84.79, 29.2, "2026-10-03T18:00:00Z")
+    for name in ("sun", "earth"):
+        assert result[name]["azimuth"] == original[name]["azimuth"]
+        assert result[name]["elevation"] == original[name]["elevation"]
+        assert result[name]["flat_visible"] == original[name]["visible"]
+        assert result[name]["visible"] is (
+            result[name]["elevation"] > result[name]["terrain_horizon"]
+        )
+
+    fallback = client.get(
+        "/api/sites/odysseus-im1/visibility?time=2026-10-03T18:00:00Z"
+    ).json()
+    assert fallback["sun"] == calculate_visibility(-80.13, 1.44, fallback["time"])["sun"]
+    assert "terrain_horizon" not in fallback["sun"]
+
+    blocked = client.get(
+        "/api/sites/athena-im2/visibility?time=2026-10-15T00:00:00Z"
+    ).json()["sun"]
+    assert blocked["elevation"] > 0
+    assert blocked["flat_visible"] is True
+    assert blocked["visible"] is False
+
+
+@pytest.mark.skipif(not KERNELS_AVAILABLE, reason="SPICE kernels not installed")
+def test_named_site_window_matches_single_time_with_terrain():
+    query = "start=2026-10-03T18:00:00Z&end=2026-10-03T19:00:00Z&step_minutes=30"
+    response = client.get("/api/sites/athena-im2/visibility/window?" + query)
+    assert response.status_code == 200
+    samples = response.json()
+    assert len(samples) == 3
+    for sample in samples:
+        single = client.get(
+            "/api/sites/athena-im2/visibility?time=" + sample["time"]
+        ).json()
+        assert sample["sun"] == single["sun"]
+        assert sample["earth"] == single["earth"]
+
+    fallback = client.get("/api/sites/odysseus-im1/visibility/window?" + query).json()
+    first = client.get(
+        "/api/sites/odysseus-im1/visibility?time=" + fallback[0]["time"]
+    ).json()
+    assert fallback[0]["sun"] == first["sun"]
+    assert "terrain_horizon" not in fallback[0]["sun"]
+
+    summary = client.get("/api/sites/athena-im2/summary?" + query)
+    assert summary.status_code == 200
+    assert summary.json()["site"] == "athena-im2"
+    assert 0 <= summary.json()["sunlight_percent"] <= 100
+
+
+def test_window_request_limits_and_summary_validation():
+    oversized = (
+        "start=2026-10-03T00:00:00Z&end=2026-10-04T09:20:00Z&step_minutes=1"
+    )
+    assert client.get("/api/visibility/window?lat=0&lon=0&" + oversized).status_code == 422
+    assert client.get("/api/sites/athena-im2/visibility/window?" + oversized).status_code == 422
+    assert client.get("/api/sites/athena-im2/summary?" + oversized).status_code == 422
+    assert client.get(
+        "/api/sites/athena-im2/summary?start=2026-10-03T00:00:00Z&end=2026-10-03T00:00:00Z"
+    ).status_code == 422
+    assert client.get(
+        "/api/sites/athena-im2/visibility/window?"
+        "start=2026-10-04T00:00:00Z&end=2026-10-03T00:00:00Z"
+    ).status_code == 422
+    assert client.get(
+        "/api/sites/athena-im2/visibility/window?"
+        "start=2026-10-03T00:00:00Z&end=2026-10-04T00:00:00Z&step_minutes=0"
+    ).status_code == 422
