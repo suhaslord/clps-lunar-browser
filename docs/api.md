@@ -96,3 +96,15 @@ Invalid coordinates, timestamps, ranges, or steps return `422`. Windows over 2,0
 I checked five equator, mid-latitude, and south-pole cases against JPL Horizons using a topocentric lunar observer (`CENTER=coord@301`, geodetic `SITE_COORD` as east longitude, latitude, and zero km). The observer table used quantity 4 (airless apparent azimuth/elevation). Horizons reports apparent positions from DE441; this backend reports geometric positions from the DE440s kernel set, so the values are close rather than identical. Across the five cases, the largest differences were 0.0058° in Sun azimuth, 0.0057° in Sun elevation, 0.0022° in Earth azimuth, and 0.0002° in Earth elevation. The snapshots and a 0.02° tolerance are in `tests/test_spice_calculations.py`; the test suite does not call Horizons.
 
 Reference: [JPL Horizons API](https://ssd-api.jpl.nasa.gov/doc/horizons.html) and [Horizons manual](https://ssd.jpl.nasa.gov/horizons/manual.html).
+
+## Frontend integration endpoints
+
+`GET /api/summary` accepts `lat`, `lon`, `start`, `end`, and optional `step_minutes` (30 by default). It returns the same percentages, longest outages, and windows as the named-site summary, with `site: null`, the requested `latitude` and `longitude`, and `horizon_mode: "flat"`. It requires `end` after `start` and uses the same 2,000 sample limit and error codes as visibility windows. It does not automatically apply terrain at coordinates that happen to match a named site.
+
+Named-site summaries additionally return `horizon_mode: "terrain"` for a site with a profile, or `"flat"` otherwise.
+
+`GET /api/sites/{site_id}/horizon` returns `{ "site": "athena-im2", "terrain_available": true, "profile": { ... } }`. The profile is the exact stored data used for masking, including `horizon`, `azimuth_step`, `source`, lunar frames, datum radius, pixel scale, range and observer height. Skyline elevation `horizon[i]` is in degrees at azimuth `i * azimuth_step`. Sites without a profile return `terrain_available: false` and `profile: null`. Unknown sites return 404 and invalid profiles return 503. This endpoint does not require SPICE kernels.
+
+`GET /health` returns `{ "ok": true }` for a running API. `GET /ready` also checks a real SPICE calculation at the project reference date and validates all configured terrain profiles. It returns 503 if these checks fail. Readiness does not guarantee ephemeris coverage at every user-requested date.
+
+Cross-origin GET requests from the local Vite origins on port 5173 are allowed by default. Set `CORS_ORIGINS` before startup for a comma-separated list of other origins, or an empty string to disable CORS. See [backend handoff](backend-handoff.md) for browser request examples and accuracy limits.

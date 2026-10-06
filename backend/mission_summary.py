@@ -4,7 +4,7 @@ from backend.calculations.sun_earth import parse_utc_time
 
 
 def summarize_window(
-    site_id: str, samples: list[dict], start: str, end: str, step_minutes: int
+    site_id: str | None, samples: list[dict], start: str, end: str, step_minutes: int
 ) -> dict:
     start_time = parse_utc_time(start)
     end_time = parse_utc_time(end)

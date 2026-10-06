@@ -1,6 +1,6 @@
 # SPICE kernels
 
-Download these NAIF kernels into this folder. The `.bsp` and `.bpc` files are binary data and should not be committed.
+Run `python -m backend.setup_kernels` from the repository root to download these NAIF kernels into this folder. The command verifies SHA-256 hashes recorded from NAIF on October 6, 2026, skips verified files, and replaces files only after a successful download and hash check. Use `--check` for offline verification, or `--directory /path/to/kernels` for another folder. CI uses this same command. Kernel files should not be committed.
 
 - [`naif0012.tls`](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls) — leap seconds for UTC to ephemeris time conversion
 - [`de440s.bsp`](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp) — Sun, Earth, and Moon positions
