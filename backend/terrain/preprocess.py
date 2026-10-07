@@ -11,6 +11,7 @@ from pyproj import CRS, Transformer
 from rasterio.windows import Window, from_bounds
 
 from backend.landing_sites import get_landing_site
+from backend.terrain.global_dem import RADIUS_M
 from backend.terrain.horizon import PROFILE_DIR, validate_profile
 
 
@@ -48,6 +49,12 @@ def build_profile(
         lunar_radius = geographic.ellipsoid.semi_major_metre
         if abs(lunar_radius - geographic.ellipsoid.semi_minor_metre) > 0.01:
             raise ValueError("DEM datum must be spherical")
+        if abs(lunar_radius - RADIUS_M) > 0.01:
+            raise ValueError("DEM datum must use the 1737400 m lunar reference radius")
+        if len(projected.axis_info) < 2 or any(
+            abs(axis.unit_conversion_factor - 1) > 1e-12 for axis in projected.axis_info[:2]
+        ):
+            raise ValueError("DEM projected coordinates must use metres")
 
         to_map = Transformer.from_crs(geographic, projected, always_xy=True)
         to_geo = Transformer.from_crs(projected, geographic, always_xy=True)

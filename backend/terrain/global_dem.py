@@ -5,6 +5,7 @@ longitude is east-positive, and the TIFF spans -180..180 with north at row zero.
 """
 import math
 import os
+import copy
 from functools import lru_cache
 from pathlib import Path
 from threading import RLock
@@ -26,17 +27,22 @@ def dem_path() -> Path:
 
 
 @lru_cache(maxsize=2)
-def _open_dem(path: str, size: int, modified: int) -> np.ndarray:
-    try:
-        grid = tifffile.memmap(path, mode="r")
-    except (OSError, ValueError, tifffile.TiffFileError) as exc:
-        raise HorizonError(f"Could not open global LOLA DEM: {exc}") from exc
-    if grid.shape != SHAPE or grid.dtype != np.dtype("uint16"):
-        raise HorizonError("Global DEM must be NASA ldem_64_uint.tif (11520 × 23040 uint16)")
+def _open_dem(path: str, size: int, modified: int, changed: int, inode: int) -> np.ndarray:
     from backend.setup_kernels import file_hash
     from backend.setup_terrain import DEM_SHA256
-    if file_hash(Path(path)) != DEM_SHA256:
-        raise HorizonError("Global DEM checksum is incorrect; run python -m backend.setup_terrain")
+    try:
+        grid = tifffile.memmap(path, mode="r")
+        if grid.shape != SHAPE or grid.dtype != np.dtype("uint16"):
+            raise HorizonError("Global DEM must be NASA ldem_64_uint.tif (11520 × 23040 uint16)")
+        if file_hash(Path(path)) != DEM_SHA256:
+            raise HorizonError("Global DEM checksum is incorrect; run python -m backend.setup_terrain")
+        identity = Path(path).stat()
+        if (identity.st_size, identity.st_mtime_ns, identity.st_ctime_ns, identity.st_ino) != (size, modified, changed, inode):
+            raise HorizonError("Global DEM changed during verification; retry the request")
+    except HorizonError:
+        raise
+    except (OSError, ValueError, tifffile.TiffFileError) as exc:
+        raise HorizonError(f"Could not open global LOLA DEM: {exc}") from exc
     return grid
 
 
@@ -46,12 +52,13 @@ def global_dem() -> tuple[np.ndarray, tuple]:
         stat = path.stat()
     except OSError as exc:
         raise HorizonError("Global terrain data is missing; run python -m backend.setup_terrain, or use terrain=false for a flat horizon") from exc
-    key = (str(path), stat.st_size, stat.st_mtime_ns)
+    key = (str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino)
     return _open_dem(*key), key
 
 
 def sample_height(grid: np.ndarray, latitude: float, longitude: float) -> float:
     """Bilinear height, with a longitude-independent estimate at each pole."""
+    validate_coordinates(latitude, longitude)
     rows, cols = grid.shape
     y = np.clip((90 - latitude) * rows / 180 - 0.5, 0, rows - 1)
     x = ((longitude + 180) * cols / 360 - 0.5) % cols
@@ -60,11 +67,11 @@ def sample_height(grid: np.ndarray, latitude: float, longitude: float) -> float:
     fy, fx = y - y0, x - x0
     values = np.array([grid[y0, x0], grid[y0, x1], grid[y1, x0], grid[y1, x1]], dtype=float)
     # NASA's offset encoding leaves zero/65535 outside valid lunar elevations.
-    if np.any((values == 0) | (values == 65535)) or not np.all(np.isfinite(values)):
+    weights = np.array([(1-fy)*(1-fx), (1-fy)*fx, fy*(1-fx), fy*fx])
+    used = weights > 0
+    if np.any((values[used] == 0) | (values[used] == 65535)) or not np.all(np.isfinite(values[used])):
         raise HorizonError("Global DEM has missing elevation at the observer")
-    top = values[0] * (1 - fx) + values[1] * fx
-    bottom = values[2] * (1 - fx) + values[3] * fx
-    height = float((top * (1 - fy) + bottom * fy) * 0.5 - 10000)
+    height = float(np.dot(values[used], weights[used]) * 0.5 - 10000)
     polar_fraction = (90 - abs(latitude)) * rows / 90
     if polar_fraction < 1:
         # The TIFF has a ring of cell centres near each pole, not a pole sample.
@@ -176,4 +183,4 @@ def coordinate_profile(latitude: float, longitude: float) -> dict:
     # Serialize cold generation so simultaneous polar requests cannot multiply memory use.
     with LOCK:
         _, key = global_dem()
-        return _cached_profile(key, latitude, longitude)
+        return copy.deepcopy(_cached_profile(key, latitude, longitude))

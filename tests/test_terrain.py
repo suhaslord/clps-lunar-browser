@@ -21,9 +21,9 @@ SITE = {"id": "test-site", "latitude": -84.79, "longitude": 29.2}
 SOURCE = "https://pgda.gsfc.nasa.gov/products/90"
 
 
-def make_dem(path, ridges=(), missing=False):
+def make_dem(path, ridges=(), missing=False, radius=1737400, units="m"):
     crs = CRS.from_proj4(
-        "+proj=stere +lat_0=-90 +lat_ts=-90 +lon_0=0 +R=1737400 +units=m"
+        f"+proj=stere +lat_0=-90 +lat_ts=-90 +lon_0=0 +R={radius} +units={units}"
     )
     to_map = Transformer.from_crs(crs.geodetic_crs, crs, always_xy=True)
     x, y = to_map.transform(SITE["longitude"], SITE["latitude"])
@@ -34,7 +34,7 @@ def make_dem(path, ridges=(), missing=False):
         lat0 = math.radians(SITE["latitude"])
         lon0 = math.radians(SITE["longitude"])
         az = math.radians(bearing)
-        arc = distance / 1737400
+        arc = distance / radius
         lat = math.asin(math.sin(lat0) * math.cos(arc) + math.cos(lat0) * math.sin(arc) * math.cos(az))
         lon = lon0 + math.atan2(math.sin(az) * math.sin(arc) * math.cos(lat0), math.cos(arc) - math.sin(lat0) * math.sin(lat))
         rx, ry = to_map.transform(math.degrees(lon), math.degrees(lat))
@@ -186,3 +186,14 @@ def test_profile_rejects_overflowing_observer_radius(tmp_path):
     profile = {**profile_from_dem(tmp_path), "datum_radius_m": 1e308, "site_elevation_m": 1e308}
     with pytest.raises(HorizonError, match="invalid site elevation"):
         validate_profile(profile)
+
+
+@pytest.mark.parametrize("radius,units,message", [
+    (6371000, "m", "lunar reference radius"),
+    (1737400, "ft", "metres"),
+])
+def test_preprocessing_does_not_mislabel_other_datums_or_units(tmp_path, radius, units, message):
+    dem = tmp_path/"wrong-coordinate-system.tif"
+    make_dem(dem, radius=radius, units=units)
+    with pytest.raises(ValueError, match=message):
+        build_profile(str(dem), SITE, SOURCE, 2500, 10, 0, 150)

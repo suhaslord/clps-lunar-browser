@@ -17,10 +17,13 @@ class SpiceCalculationError(RuntimeError):
 
 
 def validate_coordinates(latitude: float, longitude: float) -> tuple[float, float]:
-    if not math.isfinite(latitude) or not -90 <= latitude <= 90:
-        raise ValueError("lat must be between -90 and 90 degrees")
-    if not math.isfinite(longitude) or not -180 <= longitude <= 180:
-        raise ValueError("lon must be between -180 and 180 degrees")
+    for name, value, limit in (("lat", latitude, 90), ("lon", longitude, 180)):
+        try:
+            valid = not isinstance(value, bool) and math.isfinite(value) and -limit <= value <= limit
+        except (TypeError, OverflowError):
+            valid = False
+        if not valid:
+            raise ValueError(f"{name} must be between {-limit} and {limit} degrees")
     return latitude, longitude
 
 
@@ -60,6 +63,9 @@ def _local_angles(vector: np.ndarray, latitude: float, longitude: float) -> tupl
     azimuth = math.degrees(
         math.atan2(float(np.dot(direction, east)), float(np.dot(direction, north)))
     ) % 360
+    # A tiny negative bearing can round up to 360 during modulo addition.
+    if azimuth >= 360:
+        azimuth = 0.0
     return azimuth, elevation
 
 

@@ -74,13 +74,15 @@ Skyline endpoints return `{site, terrain_available: true, profile}`. The profile
 
 Checked-in named profiles are also reloaded when their file changes. Invalid replacements return 503 rather than continuing to serve a stale skyline. Profile geometry must use finite JSON numbers; numeric strings and booleans are rejected.
 
+File identity includes change time and, for the global DEM, inode, so replacing the raster with the same size and modification time still triggers verification. Cached terrain is copied for each caller to prevent one request's edits from changing later results. At exact raster cell centres, zero-weight missing neighbours do not invalidate a valid observer elevation; missing cells that contribute to interpolation or terrain masking still fail.
+
 `/health` checks that the API responds. `/ready` checks a real SPICE calculation, the global DEM and all configured named profiles. Readiness does not guarantee kernel coverage at every requested date.
 
 | Error | Status |
 | --- | --- |
 | Invalid coordinates, timestamp, range or sampling step | 422 |
 | Unknown named site | 404 |
-| Missing kernels, missing/corrupt global DEM or invalid terrain profile | 503 |
+| Missing/corrupt kernels, global DEM, terrain profile or landing-site catalog | 503 |
 | SPICE calculation failure (including unsupported dates) | 502 |
 
 Local Vite origins `http://localhost:5173` and `http://127.0.0.1:5173` are allowed. Configure comma-separated `CORS_ORIGINS` before startup for other origins; an empty string disables CORS.

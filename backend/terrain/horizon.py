@@ -1,5 +1,7 @@
 import json
 import math
+import copy
+import stat
 from functools import lru_cache
 from pathlib import Path
 
@@ -100,26 +102,31 @@ def _read_profile(path: Path, size: int, modified: int, changed: int) -> dict:
     try:
         with path.open(encoding="utf-8") as file:
             return validate_profile(json.load(file))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HorizonError(f"could not read horizon profile {path.name}: {exc}") from exc
 
 
-def load_profile(site: dict, directory: Path = PROFILE_DIR) -> dict | None:
+def load_profile(site: dict, directory: Path | None = None) -> dict | None:
+    directory = PROFILE_DIR if directory is None else directory
     path = directory / f"{site['id']}.json"
-    if not path.is_file():
-        return None
     try:
-        stat = path.stat()
+        identity = path.stat()
+    except FileNotFoundError:
+        return None
     except OSError as exc:
         raise HorizonError(f"could not read horizon profile {path.name}: {exc}") from exc
-    return validate_profile(_read_profile(path, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), site)
+    if not stat.S_ISREG(identity.st_mode):
+        raise HorizonError(f"horizon profile {path.name} is not a regular file")
+    profile = _read_profile(path, identity.st_size, identity.st_mtime_ns, identity.st_ctime_ns)
+    return copy.deepcopy(validate_profile(profile, site))
 
 
 def horizon_at(profile: dict, azimuth: float) -> float:
     angles = profile["horizon"]
     position = (azimuth % 360) / profile["azimuth_step"]
-    left = int(math.floor(position))
-    fraction = position - left
+    index = int(math.floor(position))
+    fraction = position - index
+    left = index % len(angles)
     return angles[left] * (1 - fraction) + angles[(left + 1) % len(angles)] * fraction
 
 

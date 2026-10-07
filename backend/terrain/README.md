@@ -18,6 +18,8 @@ Regenerate with `python -m backend.terrain.preprocess athena-im2`. GDAL reads a 
 
 Preprocessing rejects masked observer elevations, including finite nodata sentinels. The DEM must contain the entire projected read window, which extends 10% beyond the requested radius to allow for polar projection scale. A window crossing the dataset edge is rejected instead of silently clipping distant terrain; use a smaller radius or a larger DEM.
 
+The projected CRS must use metres and the spherical 1,737,400 m lunar reference radius. Other planetary datums and projected units are rejected instead of being labelled as LOLA lunar data.
+
 ## Shared observer and model limits
 
 Single-time, timeline, summary and skyline routes select the same profile. SPICE body directions use the same radial observer position as terrain: datum radius + site DEM elevation + 2 m. `terrain=false` explicitly requests the original reference-surface, flat-horizon calculation. Missing global data never silently switches the requested model.

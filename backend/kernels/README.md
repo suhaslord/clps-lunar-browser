@@ -10,6 +10,8 @@ Run `python -m backend.setup_kernels` from the repository root to download these
 
 The backend loads these files on the first visibility request. By default, it looks here. To use another folder, set `SPICE_KERNELS_DIR` to its path.
 
+Runtime loading also checks the pinned SHA-256 hashes. Verification is cached by file identity and repeated after a file changes; invalid or unreadable kernels return 503. The loader detects external kernel unloads or cleared kernel pools and reloads the verified set. Switching kernel directories unloads this backend's previous set while preserving unrelated application kernels.
+
 Start the API from the repository root with:
 
 ```sh

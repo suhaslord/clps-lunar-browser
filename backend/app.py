@@ -8,7 +8,7 @@ from backend.calculations.sun_earth import (
     SpiceCalculationError, calculate_visibility, calculate_visibility_window,
     parse_utc_time, validate_window_request,
 )
-from backend.landing_sites import get_landing_site, load_landing_sites
+from backend.landing_sites import LandingSiteError, get_landing_site, load_landing_sites
 from backend.mission_summary import summarize_window
 from backend.spice_kernels import KernelError
 from backend.terrain.global_dem import global_dem, sample_height
@@ -27,6 +27,7 @@ app.add_middleware(
 
 @app.exception_handler(HorizonError)
 @app.exception_handler(KernelError)
+@app.exception_handler(LandingSiteError)
 async def unavailable(_request, exc):
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
