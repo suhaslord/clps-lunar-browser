@@ -63,7 +63,10 @@ def _window(lat: float, lon: float, start: str, end: str, step_minutes: int,
     validate_window_request(lat, lon, start, end, step_minutes)
     profile = terrain_profile(lat, lon, site) if terrain else None
     samples = calculate_visibility_window(lat, lon, start, end, step_minutes, observer_radius(profile))
-    return [apply_horizon(sample, profile) for sample in samples], profile
+    for sample in samples:
+        apply_horizon(sample, profile)
+        sample.update(terrain_metadata(profile))
+    return samples, profile
 
 
 def _summary(lat: float, lon: float, start: str, end: str, step_minutes: int,
@@ -73,6 +76,9 @@ def _summary(lat: float, lon: float, start: str, end: str, step_minutes: int,
     samples, profile = _window(lat, lon, start, end, step_minutes, terrain, site)
     result = summarize_window(site["id"] if site else None, samples, start, end, step_minutes)
     result.update(latitude=lat, longitude=lon, **terrain_metadata(profile))
+    result["sampling"] = {"method": "left sample held to next cadence or requested end",
+                          "step_minutes": step_minutes, "transition_error_minutes": None,
+                          "continuous_visibility_validated": False}
     return result
 
 

@@ -1,29 +1,83 @@
-# LOLA terrain coverage
+# Terrain data and accuracy
 
-## Global locations
+## Sources and selection
 
-`python -m backend.setup_terrain` downloads NASA SVS's [64-pixel/degree LOLA displacement TIFF](https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_64_uint.tif), described in the [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/). This elevation map was reformatted directly from the LOLA team's spring-2019 gridded data. It is separate from the site's colour maps, which are optimized for appearance. The source [PDS label](https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_64.LBL) identifies the grid's mean Earth/polar axis DE421 coordinates, planetocentric latitude, east-positive longitude and 1,737,400 m spherical datum.
+`python -m backend.setup_terrain` downloads NASA SVS's [64-pixel/degree LOLA elevation TIFF](https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_64_uint.tif), described in the [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/). Elevation is derived from scientific LOLA gridded data; the display colour map is separate. The source [PDS label](https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_64.LBL) identifies planetocentric latitude, east-positive longitude, DE421 mean Earth/polar axis coordinates and the 1,737,400 m datum.
 
-The uncompressed unsigned-16-bit TIFF is 23,040 × 11,520, north at the top, centred on 0° longitude (-180° at its western edge, +180° at its eastern edge). Pixel centres are half a cell inside the edges. Its integer encoding is `height_m = DN * 0.5 - 10000`, relative to 1,737,400 m. Equivalently, radius is `1727400 + DN * 0.5`. North/south spacing is about 473.8 m; east/west spacing narrows with latitude. The 506 MiB file is downloaded once, SHA-256 verified and ignored by Git. `LUNAR_DEM_PATH` can select a different storage path; `setup_terrain --check` verifies offline.
+The 23,040 × 11,520 unsigned-16-bit TIFF is north-up, spanning −180° to +180° longitude, with half-cell pixel centres. Decode `height_m = DN * 0.5 - 10000`. Its north/south spacing is about 473.8 m; east/west spacing narrows with latitude. The 0.5 m encoding increment does not establish vertical accuracy. The 506 MiB file is checksum verified, memory mapped, read in bounded stripes and ignored by Git. `LUNAR_DEM_PATH` selects another path; `setup_terrain --check` verifies offline.
 
-`global_dem.py` memory-maps the TIFF, reads only the surrounding cells in bounded stripes, and caches up to 64 exact coordinate profiles. The local spherical bounding box wraps longitude and includes every longitude when its range crosses either pole. Observer elevation is bilinearly interpolated across surrounding cells, with longitude wrapping. In the innermost polar half-cell, it blends to the first/last latitude ring’s mean at the pole, giving each exact pole one longitude-independent elevation estimate. DEM cell centres are placed at their spherical radii, the observer position is subtracted, and local east/north/up components determine azimuth and elevation. This includes curvature. Each cell's half-diagonal approximates its angular footprint and contributes to overlapping 0.5° bins; the highest elevation is retained. Missing/invalid cells cause an error.
+Exact catalog positions use checked-in profiles generated from [NASA PGDA's polar LOLA products](https://pgda.gsfc.nasa.gov/products/90):
 
-The profile spans 40 km and excludes the nearest two pixels (about 948 m globally). This is a coarse planning model: it cannot resolve smaller landforms or very local slopes, and it omits obstructions beyond the range. The LOLA gridded source fills/interpolates areas between laser measurements and notes possible artifacts at latitude band boundaries. It is not a high-resolution measured survey at every location. At exact poles, supplied longitude defines the local north/east basis; it does not change observer elevation.
+| Position | Local source | Grid spacing | Local range | Excluded inner radius |
+| --- | --- | ---: | ---: | ---: |
+| Athena | `LDEM_80S_20MPP_ADJ.TIF` | 20 m | 40 km | 14.142 m |
+| Odysseus | `LDEM_75S_30MPP_ADJ.TIF` | 30 m | 40 km | 21.213 m |
+| Other coordinates | NASA global 64 ppd | 473.8 m north/south | 300 km | 335.029 m |
 
-## Detailed Athena profile
+Odysseus's surrounding terrain crosses the 80°S dataset boundary, so its profile uses the larger 75°S coverage. Named profiles include coarse global terrain outside the local range, with half-cell overlap at the seam, extending the combined horizon to 300 km. `outer_terrain` records that source's separate resolution and range. The outer geometry uses the detailed site's elevation and observer height; it does not introduce a second observer. All routes select the same profile.
 
-`profiles/athena-im2.json` comes from NASA PGDA's [LDEM_80S_80MPP_ADJ.TIF](https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_80MPP_ADJ.TIF), described on the [product page](https://pgda.gsfc.nasa.gov/products/90). This is an 80 m/pixel south-polar stereographic LOLA DEM in DE421 `MOON_ME`. The CRS gives a 1,737,400 m spherical radius; pixels contain metres above that radius. The checked-in profile is about 19 KB and applies to Athena's listed coordinates through both named and coordinate routes.
+Coordinates not matching a detailed profile retain global coverage. Finer raster cells do not automatically establish finer positional accuracy, resolve every landform, or certify a survey.
 
-Regenerate with `python -m backend.terrain.preprocess athena-im2`. GDAL reads a window of the remote cloud-optimized GeoTIFF. You can pass `--dem /path/to/LDEM_80S_80MPP_ADJ.TIF`. `--radius-km`, `--step` and `--height-m` control range, azimuth spacing and instrument height. Defaults match the checked-in 40 km, 0.5°, assumed 2 m observer profile. The closest 160 m is excluded. The API does not need this large polar DEM because the skyline is checked in. Odysseus uses the global DEM because its 40 km surroundings extend beyond the detailed south-polar dataset's edge.
+## Geometry and distant terrain
 
-Preprocessing rejects masked observer elevations, including finite nodata sentinels. The DEM must contain the entire projected read window, which extends 10% beyond the requested radius to allow for polar projection scale. A window crossing the dataset edge is rejected instead of silently clipping distant terrain; use a smaller radius or a larger DEM.
+Global observer elevation uses bilinear interpolation, longitude wrapping and a longitude-independent polar-cap estimate. Projected observers now also use bilinear pixel-centre interpolation. Positive-weight missing observer cells fail; zero-weight neighbours are ignored. Missing terrain cells in the requested annulus fail.
 
-The projected CRS must use metres and the spherical 1,737,400 m lunar reference radius. Other planetary datums and projected units are rejected instead of being labelled as LOLA lunar data.
+Each terrain cell is placed at its spherical radius and converted to local east/north/up components, including lunar curvature. The approximate half-diagonal footprint contributes to overlapping 0.5° azimuth bins; each retains its maximum elevation. The inner exclusion now corresponds to a half-diagonal rather than two full pixels. Terrain within this radius and sub-cell slopes or obstacles remain unresolved. Preprocessing uses bounded stripes, validates north-up metres, true scale at the projection pole and the lunar spherical datum, bounds polar projection scale, and requires full window coverage.
 
-## Shared observer and model limits
+The pinned global raster is checked for missing cells and its maximum encoded height is calculated, including half a quantization increment. `distant_terrain_ceiling_deg` is a decreasing spherical envelope for omitted distant raster cell centres, including overlap at the range edge. `distant_raster_bounded` means this ceiling lies below every represented skyline bin. If false, more distant represented terrain may still affect the skyline; per-body `distant_raster_may_block` checks elevation against the ceiling.
 
-Single-time, timeline, summary and skyline routes select the same profile. SPICE body directions use the same radial observer position as terrain: datum radius + site DEM elevation + 2 m. `terrain=false` explicitly requests the original reference-surface, flat-horizon calculation. Missing global data never silently switches the requested model.
+**This is a bound on the represented raster only.** It does not bound unresolved real terrain, registration error, interpolation error or instrument position uncertainty. The ceiling assumes the pinned raster's encoded height envelope; it is not a physical terrain certificate.
 
-NAIF's [DE440 lunar frame kernel](https://naif.jpl.nasa.gov/pub/naif/pds/pds4/clps/clps_spice/spice_kernels/fk/moon_de440_220930.tf) defines runtime `MOON_ME` as `MOON_ME_DE440_ME421`, aligned to DE421 `MOON_ME` within 3.071 × 10⁻⁷ radians (about 0.53 m on the Moon) over 2000–2040. We use this close approximation without an invented rotation. Listed landing coordinates are rounded to hundredths of a degree; more precise positions can change the terrain horizon. Both profiles record provenance, source/runtime frames, datum, site elevation, resolution, range, height, skyline and peak ranges.
+## Building a detailed profile
 
-Visibility uses body centres rather than disk edges. Earth line of sight is not a communications link budget; sunlight visibility is not solar power output. Timeline boundaries are approximate at the chosen sampling cadence. The frontend's NASA GLB is a textured sphere and supplies no terrain data to this service.
+Regenerate either named profile with:
+
+```sh
+python -m backend.terrain.preprocess athena-im2 --fetch-window backend/terrain/data/athena20-window.tif
+python -m backend.terrain.preprocess odysseus-im1
+```
+
+For another position and an appropriate independently sourced polar DEM:
+
+```sh
+python -m backend.terrain.preprocess research-site --lat -85.123456 --lon 30.123456 \
+  --dem /path/to/lunar-dem.tif --source-url https://example.org/lunar-dem.tif
+```
+
+The coordinate form writes `profiles/coordinate-research-site.json`; the service selects it at exactly those coordinates. Multiple matching profiles return 503. Nearby positions do not reuse the observer's skyline. Custom data must actually use the documented frame and datum: the CRS checks cannot independently verify a caller's scientific provenance. Local custom input requires `--source-url`, avoiding an invented NASA attribution.
+
+`--fetch-window` downloads the necessary native COG tiles with byte-range/length and source-ETag checks, bounded retries and a 512-tile/256 MiB tile-transfer limit. It publishes a sparse local TIFF for this window only and records header/tile hashes plus a subset digest. The digest is not a hash of the complete remote file. Unhonored ranges are rejected before reading a whole file. Source interruptions preserve the previous window and profile. Sparse TIFFs must not be used for other positions. The fetch helper supports sites poleward of 75° and radii up to 100 km.
+
+`--radius-km`, `--step`, `--height-m`, `--min-distance-m` and `--output` control preprocessing. Heights default to an assumed 2 m. The CLI requires latitude and longitude together and safe site IDs. A failed build does not replace the previous profile. Remote COG reads may fail due to source/network interruptions; rerun or use a local verified source. Set an appropriate GDAL CA bundle when required by the environment.
+
+## Accuracy and validation
+
+Every runtime terrain profile exposes `accuracy.status: "unvalidated"`, `survey_grade: false`, unknown absolute horizontal/vertical/horizon error, and model limitations. Catalog coordinate precision is reported separately as a conditional rounding displacement, not a measured error. Visibility retains the existing model Boolean for compatibility and adds clearance and validation status. Timeline samples include the same terrain metadata; summary `sampling` explicitly states that continuous transition accuracy is unknown.
+
+NAIF's [DE440 frame kernel](https://naif.jpl.nasa.gov/pub/naif/pds/pds4/clps/clps_spice/spice_kernels/fk/moon_de440_220930.tf) closely aligns runtime `MOON_ME_DE440_ME421` with source DE421 `MOON_ME`: about 0.53 m over 2000–2040. This approximation, rounded catalog positions and assumed instrument height remain in the uncertainty budget.
+
+Use the independent-control comparison tool after obtaining measured, matched reference features in the same frame/datum:
+
+```sh
+python -m backend.terrain.validate_accuracy references.json \
+  --horizontal-tolerance-m 1 --vertical-tolerance-m 0.5 --output comparison.json
+```
+
+Those example tolerances are illustrative, not a project acceptance standard. Input JSON:
+
+```json
+{
+  "source": "https://example.org/independent-lunar-control",
+  "source_frame": "MOON_ME_DE421",
+  "datum_radius_m": 1737400,
+  "points": [
+    {"feature_id": "control-1", "model_latitude": -85.123456,
+     "model_longitude": 30.123456, "reference_latitude": -85.123457,
+     "reference_longitude": 30.123458, "reference_elevation_m": 1234.5}
+  ]
+}
+```
+
+Provide at least three unique independently matched features; the one-record example shows the schema only. The tool samples the selected model's ground elevation and reports spherical horizontal residuals, vertical bias/RMSE/percentiles, maximum observed residuals and whether all supplied observations satisfy the chosen tolerances. Matching features and verifying reference independence remain external scientific responsibilities. An observed maximum is not an unsampled worst-case guarantee; passing comparisons never sets `survey_grade` to true.
+
+NASA also publishes source uncertainty/effective-resolution layers and [selected 5 m polar datasets with uncertainty ensembles](https://pgda.gsfc.nasa.gov/products/78). These are useful for further validation, but source uncertainty is not independent backend accuracy and cannot certify all lunar locations. No independent control measurements or numerical acceptance contract are currently supplied. Software regression tests establish specific tested properties, not absence of every possible defect.

@@ -77,7 +77,7 @@ make ur own branch for your part and PR it into main when its ready. try not to 
 
 ## backend is ready for integration
 
-Sun/Earth directions, visibility windows, CLPS site lookup, terrain horizons, and planning summaries are implemented for named sites and any selected lunar coordinate. Terrain is enabled by default: Athena uses its detailed LOLA profile and other positions use global LOLA elevation data. The display model and its illustrative lighting are separate from these calculations.
+Sun/Earth directions, visibility windows, CLPS site lookup, terrain horizons, and planning summaries are implemented for named sites and any selected lunar coordinate. Terrain is enabled by default: Athena and Odysseus use detailed 20 m and 30 m LOLA profiles with global terrain extending the skyline to 300 km; other positions use global LOLA elevation data. Responses report unresolved accuracy rather than claiming survey certification. The display model and its illustrative lighting are separate from these calculations.
 
 From the repo root, with Python 3.11 or newer:
 

@@ -63,6 +63,15 @@ def load_landing_sites(path: Path | None = None) -> list[dict]:
         mission = site.get("mission")
         if mission is not None and not isinstance(mission, str):
             raise LandingSiteError(f"landing site {site_id} has an invalid mission")
+        precision = site.get("coordinate_precision_degrees")
+        if precision is not None and (
+            isinstance(precision, bool) or not isinstance(precision, (int, float))
+            or not 0 < precision <= 360
+        ):
+            raise LandingSiteError(f"landing site {site_id} has invalid coordinate precision")
+        required = site.get("terrain_profile_required")
+        if required is not None and not isinstance(required, bool):
+            raise LandingSiteError(f"landing site {site_id} has invalid terrain profile requirement")
 
     return sites
 

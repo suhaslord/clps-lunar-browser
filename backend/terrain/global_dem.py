@@ -87,7 +87,8 @@ def sample_height(grid: np.ndarray, latitude: float, longitude: float) -> float:
 
 def build_global_profile(grid: np.ndarray, latitude: float, longitude: float,
                          max_distance_m: float = 40000, azimuth_step: float = 0.5,
-                         observer_height_m: float = 2) -> dict:
+                         observer_height_m: float = 2, *, min_distance_m: float | None = None,
+                         site_height_m: float | None = None) -> dict:
     """Maximum cell angle per overlapping azimuth bin, including curvature."""
     validate_coordinates(latitude, longitude)
     count = 360 / azimuth_step if math.isfinite(azimuth_step) and azimuth_step > 0 else 0.0
@@ -101,10 +102,14 @@ def build_global_profile(grid: np.ndarray, latitude: float, longitude: float,
     if cols != 2 * rows:
         raise HorizonError("Global DEM must cover the full lunar globe at equal angular spacing")
     pixel_m = math.pi * RADIUS_M / rows
-    min_distance = 2 * pixel_m
+    min_distance = 2 * pixel_m if min_distance_m is None else min_distance_m
+    if not math.isfinite(min_distance) or not 0 < min_distance < max_distance_m:
+        raise ValueError("invalid minimum terrain distance")
     if max_distance_m <= min_distance:
         raise HorizonError("Terrain range must exceed two DEM pixels")
-    site_height = sample_height(grid, latitude, longitude)
+    site_height = sample_height(grid, latitude, longitude) if site_height_m is None else site_height_m
+    if not math.isfinite(site_height) or RADIUS_M + site_height + observer_height_m <= 0:
+        raise ValueError("invalid observer elevation")
     lat0, lon0 = math.radians(latitude), math.radians(longitude)
     arc_limit = max_distance_m / RADIUS_M
     delta_lat = math.degrees(arc_limit)
@@ -175,7 +180,50 @@ def build_global_profile(grid: np.ndarray, latitude: float, longitude: float,
 
 @lru_cache(maxsize=64)
 def _cached_profile(key: tuple, latitude: float, longitude: float) -> dict:
-    return build_global_profile(_open_dem(*key), latitude, longitude)
+    grid = _open_dem(*key)
+    return build_global_profile(grid, latitude, longitude, max_distance_m=300000,
+                                min_distance_m=math.pi * RADIUS_M / grid.shape[0] / math.sqrt(2))
+
+
+@lru_cache(maxsize=64)
+def _cached_outer_profile(key: tuple, latitude: float, longitude: float,
+                          minimum: float, step: float, height: float, elevation: float) -> dict:
+    return build_global_profile(_open_dem(*key), latitude, longitude, 300000, step, height,
+                                min_distance_m=minimum, site_height_m=elevation)
+
+
+@lru_cache(maxsize=2)
+def _height_ceiling(key: tuple) -> float:
+    grid = _open_dem(*key)
+    # A ceiling is meaningful only when every cell in the pinned raster is valid.
+    maximum = 0
+    for first in range(0, grid.shape[0], 128):
+        stripe = grid[first:first + 128]
+        if np.any((stripe == 0) | (stripe == 65535)):
+            raise HorizonError("Global DEM has missing cells; distant terrain cannot be bounded")
+        maximum = max(maximum, int(stripe.max()))
+    return maximum * 0.5 - 10000 + 0.25
+
+
+def distant_terrain_ceiling(profile: dict) -> float:
+    """Upper angle for omitted cell centres in the pinned raster, not real terrain."""
+    with LOCK:
+        grid, key = global_dem()
+        observer = RADIUS_M + profile["site_elevation_m"] + profile["observer_height_m"]
+        ceiling = max(observer, RADIUS_M + _height_ceiling(key))
+        # Include a half-cell overlap at the range edge. The constant-radius
+        # envelope decreases with distance because ceiling >= observer.
+        arc = max(0, profile["max_distance_m"] - math.pi * RADIUS_M / grid.shape[0] / math.sqrt(2)) / RADIUS_M
+        return math.degrees(math.atan2(ceiling * math.cos(arc) - observer, ceiling * math.sin(arc)))
+
+
+def outer_profile(profile: dict) -> dict:
+    with LOCK:
+        grid, key = global_dem()
+        overlap = math.pi * RADIUS_M / grid.shape[0] / math.sqrt(2)
+        return copy.deepcopy(_cached_outer_profile(
+            key, profile["latitude"], profile["longitude"], max(overlap, profile["max_distance_m"] - overlap),
+            profile["azimuth_step"], profile["observer_height_m"], profile["site_elevation_m"]))
 
 
 def coordinate_profile(latitude: float, longitude: float) -> dict:

@@ -32,12 +32,15 @@ def test_horizon_exposes_real_profiles_for_all_named_sites():
     assert profile["site_id"] == result["site"]
     assert len(profile["horizon"]) == 720
     assert profile["azimuth_step"] == 0.5
-    assert profile["pixel_resolution_m"] == 80
-    assert profile["source"].endswith("LDEM_80S_80MPP_ADJ.TIF")
+    assert profile["pixel_resolution_m"] == 20
+    assert profile["source"].endswith("LDEM_80S_20MPP_ADJ.TIF")
+    assert profile["max_distance_m"] == 300000
+    assert profile["detailed_max_distance_m"] == 40000
     odysseus = client.get("/api/sites/odysseus-im1/horizon").json()
     assert odysseus["terrain_available"] is True
     assert odysseus["profile"]["site_id"] == "odysseus-im1"
-    assert odysseus["profile"]["pixels_per_degree"] == 64
+    assert odysseus["profile"]["pixel_resolution_m"] == 30
+    assert odysseus["profile"]["source"].endswith("LDEM_75S_30MPP_ADJ.TIF")
     assert client.get("/api/sites/unknown/horizon").status_code == 404
 
 

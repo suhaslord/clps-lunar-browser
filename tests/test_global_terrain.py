@@ -82,7 +82,7 @@ def test_cache_separates_locations_and_invalidates_replaced_dataset(monkeypatch,
     monkeypatch.setenv("LUNAR_DEM_PATH", str(path))
     calls = []
     monkeypatch.setattr(module, "_open_dem", lambda *_: np.full((1800, 3600), 20000, dtype=np.uint16))
-    def make(_grid, lat, lon):
+    def make(_grid, lat, lon, **settings):
         calls.append((lat, lon))
         return {"latitude": lat, "longitude": lon}
     monkeypatch.setattr(module, "build_global_profile", make)

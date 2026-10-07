@@ -4,6 +4,8 @@
     "name": "Odysseus landing site",
     "latitude": -80.13,
     "longitude": 1.44,
+    "coordinate_precision_degrees": 0.01,
+    "terrain_profile_required": true,
     "mission": "IM-1 Odysseus",
     "source": "https://www.nasa.gov/missions/lro/nasas-lro-images-intuitive-machines-odysseus-lander/"
   },
@@ -12,6 +14,8 @@
     "name": "Athena landing site",
     "latitude": -84.79,
     "longitude": 29.20,
+    "coordinate_precision_degrees": 0.01,
+    "terrain_profile_required": true,
     "mission": "IM-2 Athena",
     "source": "https://pds.nasa.gov/ds-view/pds/viewContext.jsp?identifier=urn:nasa:pds:context:instrument_host:spacecraft.clps_to_prime1_athena&version=1.0"
   }

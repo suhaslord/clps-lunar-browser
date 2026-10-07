@@ -22,7 +22,7 @@ Use `http://127.0.0.1:8000` as the local API base or proxy `/api` to it. Default
 | Named site + summary | `/api/sites/odysseus-im1/summary?start=...&end=...&step_minutes=30` |
 | Named site terrain skyline | `/api/sites/odysseus-im1/horizon` |
 
-Terrain is enabled by default everywhere. Coordinates exactly matching Athena use the same 80 m profile as its named route. Other positions use the global LOLA DEM. Add `terrain=false` to visibility/timeline/summary requests for an explicitly labelled flat estimate. No request silently falls back when terrain data is missing.
+Terrain is enabled by default everywhere. Coordinates exactly matching Athena or Odysseus use their named 20 m or 30 m profiles. Detailed profiles combine their local 40 km skyline with global terrain out to 300 km. Other positions use global LOLA terrain out to 300 km; exact custom coordinate profiles can also be prepared offline. Add `terrain=false` to visibility/timeline/summary requests for an explicitly labelled flat estimate. No request silently falls back when terrain data is missing.
 
 Example browser request; `URLSearchParams` correctly encodes timezone offsets:
 
@@ -40,14 +40,14 @@ if (!response.ok) {
 const summary = await response.json()
 ```
 
-Show the percentages, longest outages and UTC windows. `horizon_mode` labels terrain or flat; `terrain` provides source, resolution, range and observer height. Render failures as errors rather than zero sunlight or communications.
+Show the percentages, longest outages and UTC windows. `horizon_mode` labels terrain or flat; `terrain` provides source, resolution, range and observer height. Render failures as errors rather than zero sunlight or communications. Label visibility as a model estimate: `terrain.accuracy` remains unvalidated and `survey_grade` is false. Resolution is not positional accuracy; do not label a result measured or certain from a Boolean or grid spacing.
 
 For the skyline, fetch `/api/horizon` for the same coordinates or the named site's `/horizon`. Plot `profile.horizon[i]` at `i * profile.azimuth_step` degrees under Sun/Earth markers. North is 0° and east is 90°. The terrain used by single-time, timeline and summary routes is identical.
 
 ## Scope and accuracy
 
 - SPICE directions and terrain geometry use the same radial observer at DEM elevation plus an assumed 2 m height. Flat mode preserves the original reference-surface calculation.
-- Athena uses 80 m LOLA terrain; global coverage uses 64 pixels/degree, about 474 m north/south. Terrain within 40 km is included; the nearest two cells are excluded. Smaller landforms and obstructions beyond that range can be missed.
+- Athena uses 20 m and Odysseus uses 30 m local LOLA terrain. Global coverage remains about 474 m north/south. The combined skyline reaches 300 km; excluded inner radii are about 14 m, 21 m and 335 m respectively. The distant raster ceiling is conditional on represented heights, not a real-terrain accuracy certificate. Smaller landforms and unsurveyed instrument surroundings can be missed.
 - Visibility uses body centres, and timelines are sampled at the selected cadence. Earth line of sight does not guarantee communications; sunlight visibility does not estimate electrical power.
 - The terrain source uses DE421 `MOON_ME`, closely aligned to the runtime DE440 `MOON_ME_DE440_ME421` frame. Exact poles use one elevation estimate; longitude defines the local north/east basis. See [terrain documentation](../backend/terrain/README.md).
 - The map branch's NASA GLB is a textured sphere without elevation. Its lighting does not represent backend Sun illumination. A sourced Blender terrain mesh can be displayed through Cesium while the backend continues these calculations.

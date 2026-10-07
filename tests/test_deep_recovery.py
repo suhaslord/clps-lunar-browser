@@ -76,7 +76,7 @@ def test_global_cache_returns_independent_data_and_serializes_cold_requests(monk
     monkeypatch.setenv("LUNAR_DEM_PATH", str(path))
     monkeypatch.setattr(dem_module, "_open_dem", lambda *_: np.zeros((4, 8)))
     calls = []
-    def build(_grid, lat, lon):
+    def build(_grid, lat, lon, **settings):
         calls.append((lat, lon))
         return {"latitude": lat, "longitude": lon, "horizon": [2.]}
     monkeypatch.setattr(dem_module, "build_global_profile", build)
