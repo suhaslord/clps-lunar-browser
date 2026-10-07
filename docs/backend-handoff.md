@@ -49,7 +49,7 @@ For the skyline, fetch `/api/horizon` for the same coordinates or the named site
 - SPICE directions and terrain geometry use the same radial observer at DEM elevation plus an assumed 2 m height. Flat mode preserves the original reference-surface calculation.
 - Athena uses 80 m LOLA terrain; global coverage uses 64 pixels/degree, about 474 m north/south. Terrain within 40 km is included; the nearest two cells are excluded. Smaller landforms and obstructions beyond that range can be missed.
 - Visibility uses body centres, and timelines are sampled at the selected cadence. Earth line of sight does not guarantee communications; sunlight visibility does not estimate electrical power.
-- The terrain source uses DE421 `MOON_ME`, closely aligned to the runtime DE440 `MOON_ME_DE440_ME421` frame. Exact poles use the longitude-defined local north/east basis. See [terrain documentation](../backend/terrain/README.md).
+- The terrain source uses DE421 `MOON_ME`, closely aligned to the runtime DE440 `MOON_ME_DE440_ME421` frame. Exact poles use one elevation estimate; longitude defines the local north/east basis. See [terrain documentation](../backend/terrain/README.md).
 - The map branch's NASA GLB is a textured sphere without elevation. Its lighting does not represent backend Sun illumination. A sourced Blender terrain mesh can be displayed through Cesium while the backend continues these calculations.
 
 Full response and error details are in [the API contract](api.md). The automated workflow verifies kernels, downloads/caches the global DEM, and runs geometry and API tests.

@@ -212,3 +212,15 @@ def test_real_global_locations_have_consistent_horizon_and_visibility(lat, lon):
     summary = client.get("/api/summary", params={**coords, **WINDOW})
     assert summary.status_code == 200
     assert summary.json()["horizon_mode"] == "terrain"
+
+
+def test_pole_height_is_unique_and_polar_cap_is_continuous():
+    grid = np.full((180, 360), 20000, dtype=np.uint16)
+    grid[0] = np.arange(360, dtype=np.uint16) + 20000
+    grid[-1] = np.arange(360, dtype=np.uint16) + 21000
+    for lat, row in [(90, 0), (-90, -1)]:
+        expected = grid[row].mean() * 0.5 - 10000
+        for lon in [-180, -45, 0, 90, 180]:
+            assert sample_height(grid, lat, lon) == expected
+            near = sample_height(grid, math.copysign(90 - 1e-8, lat), lon)
+            assert near == pytest.approx(expected, abs=0.00001)

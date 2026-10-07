@@ -51,7 +51,7 @@ def global_dem() -> tuple[np.ndarray, tuple]:
 
 
 def sample_height(grid: np.ndarray, latitude: float, longitude: float) -> float:
-    """Bilinear surface height in metres; wrap longitude and clamp pole rows."""
+    """Bilinear height, with a longitude-independent estimate at each pole."""
     rows, cols = grid.shape
     y = np.clip((90 - latitude) * rows / 180 - 0.5, 0, rows - 1)
     x = ((longitude + 180) * cols / 360 - 0.5) % cols
@@ -64,7 +64,18 @@ def sample_height(grid: np.ndarray, latitude: float, longitude: float) -> float:
         raise HorizonError("Global DEM has missing elevation at the observer")
     top = values[0] * (1 - fx) + values[1] * fx
     bottom = values[2] * (1 - fx) + values[3] * fx
-    return float((top * (1 - fy) + bottom * fy) * 0.5 - 10000)
+    height = float((top * (1 - fy) + bottom * fy) * 0.5 - 10000)
+    polar_fraction = (90 - abs(latitude)) * rows / 90
+    if polar_fraction < 1:
+        # The TIFF has a ring of cell centres near each pole, not a pole sample.
+        # Use that ring's mean at the unique pole and blend to the first-row
+        # interpolation at its latitude. This keeps the polar cap continuous.
+        ring = np.asarray(grid[0 if latitude > 0 else -1], dtype=float)
+        if np.any((ring == 0) | (ring == 65535)) or not np.all(np.isfinite(ring)):
+            raise HorizonError("Global DEM has missing elevation in the polar cap")
+        pole_height = float(ring.mean() * 0.5 - 10000)
+        height = pole_height * (1 - polar_fraction) + height * polar_fraction
+    return height
 
 
 def build_global_profile(grid: np.ndarray, latitude: float, longitude: float,
@@ -145,6 +156,7 @@ def build_global_profile(grid: np.ndarray, latitude: float, longitude: float,
         "site_id": "coordinates", "latitude": latitude, "longitude": longitude,
         "source": SOURCE, "source_frame": "MOON_ME_DE421", "runtime_frame": "MOON_ME_DE440_ME421",
         "projection": "global simple cylindrical, pixel centres, east-positive longitude",
+        "observer_elevation_method": "bilinear with longitude-independent polar-cap interpolation",
         "datum_radius_m": RADIUS_M, "site_elevation_m": site_height,
         "pixel_resolution_m": pixel_m, "pixels_per_degree": rows / 180,
         "max_distance_m": max_distance_m, "min_distance_m": min_distance,
