@@ -14,6 +14,33 @@ from backend.spice_kernels import KERNEL_FILES, kernel_directory
 client = TestClient(app)
 
 
+@pytest.mark.parametrize("time", [
+    "0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00",
+])
+@pytest.mark.parametrize("route", ["visibility", "visibility/window", "summary"])
+def test_utc_conversion_overflow_returns_validation_error(route, time):
+    response = client.get("/api/" + route, params={
+        "lat": 0, "lon": 0, "terrain": False,
+        "time": time, "start": time, "end": "2026-10-03T01:00:00Z",
+    })
+    assert response.status_code == 422
+    assert "timestamp" in response.json()["detail"]
+
+
+def test_summary_with_step_larger_than_datetime_range():
+    params = {
+        "lat": 0, "lon": 0, "terrain": False,
+        "start": "2026-10-03T00:00:00Z", "end": "2026-10-03T01:00:00Z",
+        "step_minutes": 100_000_000_000,
+    }
+    response = client.get("/api/summary", params=params)
+    assert response.status_code == 200
+    result = response.json()
+    single = client.get("/api/visibility", params={**params, "time": params["start"]}).json()
+    assert result["sunlight_percent"] == (100 if single["sun"]["visible"] else 0)
+    assert result["earth_visible_percent"] == (100 if single["earth"]["visible"] else 0)
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200

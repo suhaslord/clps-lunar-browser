@@ -41,3 +41,13 @@ def test_summary_uses_partial_last_interval_without_substep_claim():
     assert result["windows"]["sunlight"] == [
         {"start": "2026-10-03T00:30:00Z", "end": "2026-10-03T01:10:00Z"},
     ]
+
+
+def test_summary_clips_last_interval_near_datetime_limit():
+    start, end = "9999-12-31T23:30:00Z", "9999-12-31T23:59:59Z"
+    result = summarize_window(None, [
+        {"time": start, "sun": {"visible": True}, "earth": {"visible": False}},
+    ], start, end, 60)
+    assert result["sunlight_percent"] == 100
+    assert result["longest_comm_blackout_minutes"] == pytest.approx(1799 / 60)
+    assert result["windows"]["sunlight"] == [{"start": start, "end": end}]

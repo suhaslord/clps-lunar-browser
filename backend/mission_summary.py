@@ -21,7 +21,9 @@ def summarize_window(
         time = parse_utc_time(sample["time"])
         if time >= end_time:
             break
-        until = min(time + step, end_time)
+        # Compare the remaining duration before adding: a valid large sampling
+        # step (or a date near year 9999) can overflow a datetime addition.
+        until = end_time if end_time - time <= step else time + step
         sun = sample["sun"]["visible"]
         earth = sample["earth"]["visible"]
         states = {

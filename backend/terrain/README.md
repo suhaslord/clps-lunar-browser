@@ -16,6 +16,8 @@ The profile spans 40 km and excludes the nearest two pixels (about 948 m globall
 
 Regenerate with `python -m backend.terrain.preprocess athena-im2`. GDAL reads a window of the remote cloud-optimized GeoTIFF. You can pass `--dem /path/to/LDEM_80S_80MPP_ADJ.TIF`. `--radius-km`, `--step` and `--height-m` control range, azimuth spacing and instrument height. Defaults match the checked-in 40 km, 0.5°, assumed 2 m observer profile. The closest 160 m is excluded. The API does not need this large polar DEM because the skyline is checked in. Odysseus uses the global DEM because its 40 km surroundings extend beyond the detailed south-polar dataset's edge.
 
+Preprocessing rejects masked observer elevations, including finite nodata sentinels. The DEM must contain the entire projected read window, which extends 10% beyond the requested radius to allow for polar projection scale. A window crossing the dataset edge is rejected instead of silently clipping distant terrain; use a smaller radius or a larger DEM.
+
 ## Shared observer and model limits
 
 Single-time, timeline, summary and skyline routes select the same profile. SPICE body directions use the same radial observer position as terrain: datum radius + site DEM elevation + 2 m. `terrain=false` explicitly requests the original reference-surface, flat-horizon calculation. Missing global data never silently switches the requested model.

@@ -58,16 +58,23 @@ def build_profile(
         ):
             raise ValueError("site is outside the DEM")
         row, col = dataset.index(x, y)
-        site_height = float(dataset.read(1, window=Window(col, row, 1, 1))[0, 0])
+        observer_cell = dataset.read(1, window=Window(col, row, 1, 1), masked=True)
+        if np.ma.getmaskarray(observer_cell)[0, 0]:
+            raise ValueError("site has no DEM elevation")
+        site_height = float(observer_cell[0, 0])
         if not math.isfinite(site_height):
             raise ValueError("site has no DEM elevation")
 
         # The projected scale at these latitudes stays within a few percent of ground distance.
         extent = max_distance_m * 1.1
         window = from_bounds(x - extent, y - extent, x + extent, y + extent, dataset.transform)
-        window = window.round_offsets().round_lengths().intersection(
-            Window(0, 0, dataset.width, dataset.height)
-        )
+        window = window.round_offsets().round_lengths()
+        # Clipping can still leave nearby cells in every azimuth bin while
+        # silently discarding farther terrain inside the declared range.
+        if (window.col_off < 0 or window.row_off < 0
+                or window.col_off + window.width > dataset.width
+                or window.row_off + window.height > dataset.height):
+            raise ValueError("DEM does not cover the full terrain window; reduce the radius or use a larger DEM")
         heights = dataset.read(1, window=window, masked=True)
         rows, cols = np.indices(heights.shape)
         transform = dataset.window_transform(window)

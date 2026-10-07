@@ -72,6 +72,8 @@ Each sample describes the interval from its timestamp to the next step, or the r
 
 Skyline endpoints return `{site, terrain_available: true, profile}`. The profile is the data used for masking, with provenance, range, resolution, observer height, `horizon`, `peak_distance_m`, and `azimuth_step`. `horizon[i]` is elevation at azimuth `i * azimuth_step`; lookup interpolates across adjacent bins and wraps 360° to 0°. The global profile is generated from surrounding raster cells and cached for 64 exact coordinate pairs per process. The DEM is memory-mapped and processed in bounded stripes, avoiding a full raster copy per request. Replacing the dataset invalidates cached profiles.
 
+Checked-in named profiles are also reloaded when their file changes. Invalid replacements return 503 rather than continuing to serve a stale skyline. Profile geometry must use finite JSON numbers; numeric strings and booleans are rejected.
+
 `/health` checks that the API responds. `/ready` checks a real SPICE calculation, the global DEM and all configured named profiles. Readiness does not guarantee kernel coverage at every requested date.
 
 | Error | Status |

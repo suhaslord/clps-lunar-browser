@@ -32,7 +32,10 @@ def parse_utc_time(value: str) -> datetime:
 
     if parsed.tzinfo is None:
         raise ValueError("time must include a timezone, for example 2026-10-03T18:00:00Z")
-    return parsed.astimezone(timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError("timestamp is outside the supported UTC datetime range") from exc
 
 
 def _local_angles(vector: np.ndarray, latitude: float, longitude: float) -> tuple[float, float]:

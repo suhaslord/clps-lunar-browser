@@ -121,3 +121,68 @@ def test_profile_loader_rejects_mismatch_and_bad_data(tmp_path):
     path2.write_text(json.dumps({**profile, "site_id": "bad"}))
     with pytest.raises(HorizonError, match="invalid angle"):
         load_profile({**SITE, "id": "bad"}, tmp_path)
+
+
+def test_finite_nodata_at_observer_is_rejected(tmp_path):
+    dem = tmp_path / "nodata-observer.tif"
+    make_dem(dem)
+    with rasterio.open(dem, "r+") as dataset:
+        grid = dataset.read(1)
+        grid[100, 100] = -9999
+        dataset.nodata = -9999
+        dataset.write(grid, 1)
+    with pytest.raises(ValueError, match="site has no DEM elevation"):
+        build_profile(str(dem), SITE, SOURCE, 2500, 10, 0, 150)
+
+
+def test_dem_edge_does_not_silently_truncate_declared_terrain_range(tmp_path):
+    dem = tmp_path / "partial-radius.tif"
+    make_dem(dem)
+    # Every bearing has nearby cells, but the 12 km circle extends beyond
+    # this DEM's approximately 10 km half-width.
+    with pytest.raises(ValueError, match="full terrain window"):
+        build_profile(str(dem), SITE, SOURCE, 12000, 10, 0, 150)
+
+
+def test_profile_cache_reloads_replaced_file_and_rejects_corruption(tmp_path):
+    profile = profile_from_dem(tmp_path)
+    path = tmp_path / "test-site.json"
+    path.write_text(json.dumps(profile))
+    assert load_profile(SITE, tmp_path)["horizon"] == profile["horizon"]
+    updated = {**profile, "horizon": [20] * 36, "source": SOURCE + "?revision=2"}
+    replacement = tmp_path / "replacement.json"
+    replacement.write_text(json.dumps(updated))
+    replacement.replace(path)
+    assert load_profile(SITE, tmp_path)["horizon"] == [20] * 36
+    path.write_text("{broken JSON")
+    with pytest.raises(HorizonError, match="could not read"):
+        load_profile(SITE, tmp_path)
+
+
+@pytest.mark.parametrize("field", [
+    "azimuth_step", "latitude", "longitude", "observer_height_m",
+    "datum_radius_m", "max_distance_m",
+])
+@pytest.mark.parametrize("invalid", ["2", True, 10 ** 1000], ids=["string", "bool", "oversized-integer"])
+def test_profile_metadata_must_be_usable_numeric_values(tmp_path, field, invalid):
+    profile = profile_from_dem(tmp_path)
+    profile[field] = invalid
+    with pytest.raises(HorizonError):
+        validate_profile(profile)
+
+
+@pytest.mark.parametrize("field", ["horizon", "site_elevation_m", "peak_distance_m"])
+def test_profile_rejects_oversized_optional_numbers(tmp_path, field):
+    profile = profile_from_dem(tmp_path)
+    if field == "site_elevation_m":
+        profile[field] = 10 ** 1000
+    else:
+        profile[field][0] = 10 ** 1000
+    with pytest.raises(HorizonError):
+        validate_profile(profile)
+
+
+def test_profile_rejects_overflowing_observer_radius(tmp_path):
+    profile = {**profile_from_dem(tmp_path), "datum_radius_m": 1e308, "site_elevation_m": 1e308}
+    with pytest.raises(HorizonError, match="invalid site elevation"):
+        validate_profile(profile)

@@ -11,10 +11,25 @@ class HorizonError(ValueError):
     pass
 
 
+def _finite_number(value) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def validate_profile(profile: dict, site: dict | None = None) -> dict:
     if not isinstance(profile, dict):
         raise HorizonError("horizon profile must be an object")
     try:
+        # Downstream geometry uses these original values, so strings and
+        # booleans must not pass validation through float coercion.
+        for key in ("azimuth_step", "latitude", "longitude", "observer_height_m",
+                    "datum_radius_m", "max_distance_m"):
+            if not _finite_number(profile[key]):
+                raise HorizonError("horizon profile is missing valid numeric metadata")
         step = float(profile["azimuth_step"])
         angles = profile["horizon"]
         latitude = float(profile["latitude"])
@@ -22,7 +37,7 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
         height = float(profile["observer_height_m"])
         radius = float(profile["datum_radius_m"])
         distance = float(profile["max_distance_m"])
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise HorizonError("horizon profile is missing valid metadata") from exc
 
     count = 360 / step if math.isfinite(step) and step > 0 else 0.0
@@ -31,17 +46,16 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
     if not isinstance(angles, list) or len(angles) != int(count):
         raise HorizonError("horizon profile has the wrong number of bins")
     if any(
-        isinstance(angle, bool)
-        or not isinstance(angle, (int, float))
-        or not math.isfinite(angle)
+        not _finite_number(angle)
         or not -90 <= angle <= 90
         for angle in angles
     ):
         raise HorizonError("horizon profile contains an invalid angle")
     elevation = profile.get("site_elevation_m")
-    if elevation is not None and (
-        isinstance(elevation, bool) or not isinstance(elevation, (float, int))
-        or not math.isfinite(elevation) or radius + elevation + height <= 0
+    if "site_elevation_m" in profile and (
+        not _finite_number(elevation)
+        or not _finite_number(radius + elevation + height)
+        or radius + elevation + height <= 0
     ):
         raise HorizonError("horizon profile has an invalid site elevation")
     peak_distances = profile.get("peak_distance_m")
@@ -49,9 +63,7 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
         not isinstance(peak_distances, list)
         or len(peak_distances) != int(count)
         or any(
-            not isinstance(value, (int, float))
-            or isinstance(value, bool)
-            or not math.isfinite(value)
+            not _finite_number(value)
             or value <= 0
             or value > distance
             for value in peak_distances
@@ -84,7 +96,7 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
 
 
 @lru_cache(maxsize=16)
-def _read_profile(path: Path) -> dict:
+def _read_profile(path: Path, size: int, modified: int, changed: int) -> dict:
     try:
         with path.open(encoding="utf-8") as file:
             return validate_profile(json.load(file))
@@ -96,7 +108,11 @@ def load_profile(site: dict, directory: Path = PROFILE_DIR) -> dict | None:
     path = directory / f"{site['id']}.json"
     if not path.is_file():
         return None
-    return validate_profile(_read_profile(path), site)
+    try:
+        stat = path.stat()
+    except OSError as exc:
+        raise HorizonError(f"could not read horizon profile {path.name}: {exc}") from exc
+    return validate_profile(_read_profile(path, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), site)
 
 
 def horizon_at(profile: dict, azimuth: float) -> float:
