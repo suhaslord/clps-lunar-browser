@@ -1,6 +1,6 @@
 # SPICE kernels
 
-Download these NAIF kernels into this folder. The `.bsp` and `.bpc` files are binary data and should not be committed.
+Run `python -m backend.setup_kernels` from the repository root to download these NAIF kernels into this folder. The command verifies SHA-256 hashes recorded from NAIF on October 6, 2026, skips verified files, and replaces files only after a successful download and hash check. Use `--check` for offline verification, or `--directory /path/to/kernels` for another folder. CI uses this same command. Kernel files should not be committed.
 
 - [`naif0012.tls`](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls) — leap seconds for UTC to ephemeris time conversion
 - [`de440s.bsp`](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp) — Sun, Earth, and Moon positions
@@ -9,6 +9,8 @@ Download these NAIF kernels into this folder. The `.bsp` and `.bpc` files are bi
 - [`moon_de440_220930.tf`](https://naif.jpl.nasa.gov/pub/naif/pds/pds4/clps/clps_spice/spice_kernels/fk/moon_de440_220930.tf) — lunar `MOON_ME` frame definitions
 
 The backend loads these files on the first visibility request. By default, it looks here. To use another folder, set `SPICE_KERNELS_DIR` to its path.
+
+Runtime loading also checks the pinned SHA-256 hashes. Verification is cached by file identity and repeated after a file changes; invalid or unreadable kernels return 503. The loader detects external kernel unloads or cleared kernel pools and reloads the verified set. Switching kernel directories unloads this backend's previous set while preserving unrelated application kernels.
 
 Start the API from the repository root with:
 

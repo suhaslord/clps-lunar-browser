@@ -6,3 +6,6 @@ pytest
 httpx
 rasterio
 pyproj
+certifi
+
+tifffile

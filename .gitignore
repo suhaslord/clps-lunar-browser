@@ -27,3 +27,6 @@ Thumbs.db
 
 # logs
 *.log
+
+# incomplete dataset downloads
+backend/terrain/data/*.part

@@ -9,32 +9,40 @@ LANDING_SITES_FILE = (
 )
 
 
-def load_landing_sites(path: Path = LANDING_SITES_FILE) -> list[dict]:
-    with path.open(encoding="utf-8") as file:
-        sites = json.load(file)
+class LandingSiteError(ValueError):
+    """The server's landing-site catalog is missing or invalid."""
+
+
+def load_landing_sites(path: Path | None = None) -> list[dict]:
+    path = LANDING_SITES_FILE if path is None else path
+    try:
+        with path.open(encoding="utf-8") as file:
+            sites = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise LandingSiteError(f"could not read landing-site catalog: {exc}") from exc
 
     if not isinstance(sites, list):
-        raise ValueError("landing_sites.json must contain a list")
+        raise LandingSiteError("landing_sites.json must contain a list")
 
     seen_ids = set()
     for site in sites:
         if not isinstance(site, dict):
-            raise ValueError("each landing site must be an object")
+            raise LandingSiteError("each landing site must be an object")
 
         site_id = site.get("id")
         if not isinstance(site_id, str) or not site_id:
-            raise ValueError("each landing site needs a non-empty id")
+            raise LandingSiteError("each landing site needs a non-empty id")
         if site_id in seen_ids:
-            raise ValueError(f"duplicate landing site id: {site_id}")
+            raise LandingSiteError(f"duplicate landing site id: {site_id}")
         seen_ids.add(site_id)
 
         if not isinstance(site.get("name"), str) or not site["name"]:
-            raise ValueError(f"landing site {site_id} needs a name")
+            raise LandingSiteError(f"landing site {site_id} needs a name")
         if (
             not isinstance(site.get("source"), str)
             or not site["source"].startswith("https://")
         ):
-            raise ValueError(f"landing site {site_id} needs an HTTPS source URL")
+            raise LandingSiteError(f"landing site {site_id} needs an HTTPS source URL")
 
         latitude = site.get("latitude")
         longitude = site.get("longitude")
@@ -44,17 +52,26 @@ def load_landing_sites(path: Path = LANDING_SITES_FILE) -> list[dict]:
             or not isinstance(longitude, (int, float))
             or isinstance(longitude, bool)
         ):
-            raise ValueError(f"landing site {site_id} needs numeric coordinates")
+            raise LandingSiteError(f"landing site {site_id} needs numeric coordinates")
         try:
             validate_coordinates(latitude, longitude)
         except ValueError as exc:
-            raise ValueError(
+            raise LandingSiteError(
                 f"landing site {site_id} has invalid coordinates: {exc}"
             ) from exc
 
         mission = site.get("mission")
         if mission is not None and not isinstance(mission, str):
-            raise ValueError(f"landing site {site_id} has an invalid mission")
+            raise LandingSiteError(f"landing site {site_id} has an invalid mission")
+        precision = site.get("coordinate_precision_degrees")
+        if precision is not None and (
+            isinstance(precision, bool) or not isinstance(precision, (int, float))
+            or not 0 < precision <= 360
+        ):
+            raise LandingSiteError(f"landing site {site_id} has invalid coordinate precision")
+        required = site.get("terrain_profile_required")
+        if required is not None and not isinstance(required, bool):
+            raise LandingSiteError(f"landing site {site_id} has invalid terrain profile requirement")
 
     return sites
 

@@ -17,10 +17,13 @@ class SpiceCalculationError(RuntimeError):
 
 
 def validate_coordinates(latitude: float, longitude: float) -> tuple[float, float]:
-    if not math.isfinite(latitude) or not -90 <= latitude <= 90:
-        raise ValueError("lat must be between -90 and 90 degrees")
-    if not math.isfinite(longitude) or not -180 <= longitude <= 180:
-        raise ValueError("lon must be between -180 and 180 degrees")
+    for name, value, limit in (("lat", latitude, 90), ("lon", longitude, 180)):
+        try:
+            valid = not isinstance(value, bool) and math.isfinite(value) and -limit <= value <= limit
+        except (TypeError, OverflowError):
+            valid = False
+        if not valid:
+            raise ValueError(f"{name} must be between {-limit} and {limit} degrees")
     return latitude, longitude
 
 
@@ -32,7 +35,10 @@ def parse_utc_time(value: str) -> datetime:
 
     if parsed.tzinfo is None:
         raise ValueError("time must include a timezone, for example 2026-10-03T18:00:00Z")
-    return parsed.astimezone(timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError("timestamp is outside the supported UTC datetime range") from exc
 
 
 def _local_angles(vector: np.ndarray, latitude: float, longitude: float) -> tuple[float, float]:
@@ -57,11 +63,17 @@ def _local_angles(vector: np.ndarray, latitude: float, longitude: float) -> tupl
     azimuth = math.degrees(
         math.atan2(float(np.dot(direction, east)), float(np.dot(direction, north)))
     ) % 360
+    # A tiny negative bearing can round up to 360 during modulo addition.
+    if azimuth >= 360:
+        azimuth = 0.0
     return azimuth, elevation
 
 
-def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> dict:
+def calculate_visibility(latitude: float, longitude: float, utc_time: str,
+                         observer_radius_m: float | None = None) -> dict:
     latitude, longitude = validate_coordinates(latitude, longitude)
+    if observer_radius_m is not None and (not math.isfinite(observer_radius_m) or observer_radius_m <= 0):
+        raise ValueError("observer radius must be a positive finite distance")
     time = parse_utc_time(utc_time)
     output_time = time.isoformat().replace("+00:00", "Z")
 
@@ -72,9 +84,16 @@ def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> di
             _, radii = spiceypy.bodvrd("MOON", "RADII", 3)
             equatorial_radius = float(radii[0])
             flattening = (equatorial_radius - float(radii[2])) / equatorial_radius
-            site_fixed = spiceypy.georec(
-                math.radians(longitude), math.radians(latitude), 0.0, equatorial_radius, flattening
-            )
+            if observer_radius_m is None:
+                site_fixed = spiceypy.georec(
+                    math.radians(longitude), math.radians(latitude), 0.0, equatorial_radius, flattening
+                )
+            else:
+                # LOLA latitudes are planetocentric; match its radial observer exactly.
+                lat, lon = math.radians(latitude), math.radians(longitude)
+                site_fixed = observer_radius_m / 1000 * np.array([
+                    math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)
+                ])
 
             # SPICE rotates the surface point between the lunar fixed frame and inertial J2000.
             fixed_to_j2000 = spiceypy.pxform(MOON_FRAME, "J2000", et)
@@ -110,8 +129,29 @@ def calculate_visibility_window(
     start: str,
     end: str,
     step_minutes: int = 30,
+    observer_radius_m: float | None = None,
 ) -> list[dict]:
     """Calculate visibility at regular UTC times, including end when it lands on the grid."""
+    start_time, end_time, step = validate_window_request(latitude, longitude, start, end, step_minutes)
+    samples = []
+    current = start_time
+    while current <= end_time:
+        result = calculate_visibility(latitude, longitude, current.isoformat(), observer_radius_m)
+        samples.append(
+            {
+                "time": result["time"],
+                "sun": result["sun"],
+                "earth": result["earth"],
+            }
+        )
+        if end_time - current < step:
+            break
+        current += step
+    return samples
+
+
+def validate_window_request(latitude: float, longitude: float, start: str, end: str,
+                            step_minutes: int = 30) -> tuple[datetime, datetime, timedelta]:
     latitude, longitude = validate_coordinates(latitude, longitude)
     start_time = parse_utc_time(start)
     end_time = parse_utc_time(end)
@@ -131,18 +171,4 @@ def calculate_visibility_window(
     if (end_time - start_time) // step + 1 > MAX_WINDOW_SAMPLES:
         raise ValueError(f"window exceeds {MAX_WINDOW_SAMPLES} samples")
 
-    samples = []
-    current = start_time
-    while current <= end_time:
-        result = calculate_visibility(latitude, longitude, current.isoformat())
-        samples.append(
-            {
-                "time": result["time"],
-                "sun": result["sun"],
-                "earth": result["earth"],
-            }
-        )
-        if end_time - current < step:
-            break
-        current += step
-    return samples
+    return start_time, end_time, step
