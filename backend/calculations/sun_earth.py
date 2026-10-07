@@ -60,8 +60,11 @@ def _local_angles(vector: np.ndarray, latitude: float, longitude: float) -> tupl
     return azimuth, elevation
 
 
-def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> dict:
+def calculate_visibility(latitude: float, longitude: float, utc_time: str,
+                         observer_radius_m: float | None = None) -> dict:
     latitude, longitude = validate_coordinates(latitude, longitude)
+    if observer_radius_m is not None and (not math.isfinite(observer_radius_m) or observer_radius_m <= 0):
+        raise ValueError("observer radius must be a positive finite distance")
     time = parse_utc_time(utc_time)
     output_time = time.isoformat().replace("+00:00", "Z")
 
@@ -72,9 +75,16 @@ def calculate_visibility(latitude: float, longitude: float, utc_time: str) -> di
             _, radii = spiceypy.bodvrd("MOON", "RADII", 3)
             equatorial_radius = float(radii[0])
             flattening = (equatorial_radius - float(radii[2])) / equatorial_radius
-            site_fixed = spiceypy.georec(
-                math.radians(longitude), math.radians(latitude), 0.0, equatorial_radius, flattening
-            )
+            if observer_radius_m is None:
+                site_fixed = spiceypy.georec(
+                    math.radians(longitude), math.radians(latitude), 0.0, equatorial_radius, flattening
+                )
+            else:
+                # LOLA latitudes are planetocentric; match its radial observer exactly.
+                lat, lon = math.radians(latitude), math.radians(longitude)
+                site_fixed = observer_radius_m / 1000 * np.array([
+                    math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)
+                ])
 
             # SPICE rotates the surface point between the lunar fixed frame and inertial J2000.
             fixed_to_j2000 = spiceypy.pxform(MOON_FRAME, "J2000", et)
@@ -110,8 +120,29 @@ def calculate_visibility_window(
     start: str,
     end: str,
     step_minutes: int = 30,
+    observer_radius_m: float | None = None,
 ) -> list[dict]:
     """Calculate visibility at regular UTC times, including end when it lands on the grid."""
+    start_time, end_time, step = validate_window_request(latitude, longitude, start, end, step_minutes)
+    samples = []
+    current = start_time
+    while current <= end_time:
+        result = calculate_visibility(latitude, longitude, current.isoformat(), observer_radius_m)
+        samples.append(
+            {
+                "time": result["time"],
+                "sun": result["sun"],
+                "earth": result["earth"],
+            }
+        )
+        if end_time - current < step:
+            break
+        current += step
+    return samples
+
+
+def validate_window_request(latitude: float, longitude: float, start: str, end: str,
+                            step_minutes: int = 30) -> tuple[datetime, datetime, timedelta]:
     latitude, longitude = validate_coordinates(latitude, longitude)
     start_time = parse_utc_time(start)
     end_time = parse_utc_time(end)
@@ -131,18 +162,4 @@ def calculate_visibility_window(
     if (end_time - start_time) // step + 1 > MAX_WINDOW_SAMPLES:
         raise ValueError(f"window exceeds {MAX_WINDOW_SAMPLES} samples")
 
-    samples = []
-    current = start_time
-    while current <= end_time:
-        result = calculate_visibility(latitude, longitude, current.isoformat())
-        samples.append(
-            {
-                "time": result["time"],
-                "sun": result["sun"],
-                "earth": result["earth"],
-            }
-        )
-        if end_time - current < step:
-            break
-        current += step
-    return samples
+    return start_time, end_time, step

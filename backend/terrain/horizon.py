@@ -25,7 +25,7 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
     except (KeyError, TypeError, ValueError) as exc:
         raise HorizonError("horizon profile is missing valid metadata") from exc
 
-    count = 360 / step if math.isfinite(step) and step > 0 else 0
+    count = 360 / step if math.isfinite(step) and step > 0 else 0.0
     if not (count.is_integer() and 1 <= count <= 3600):
         raise HorizonError("azimuth step must divide 360 degrees")
     if not isinstance(angles, list) or len(angles) != int(count):
@@ -38,6 +38,12 @@ def validate_profile(profile: dict, site: dict | None = None) -> dict:
         for angle in angles
     ):
         raise HorizonError("horizon profile contains an invalid angle")
+    elevation = profile.get("site_elevation_m")
+    if elevation is not None and (
+        isinstance(elevation, bool) or not isinstance(elevation, (float, int))
+        or not math.isfinite(elevation) or radius + elevation + height <= 0
+    ):
+        raise HorizonError("horizon profile has an invalid site elevation")
     peak_distances = profile.get("peak_distance_m")
     if peak_distances is not None and (
         not isinstance(peak_distances, list)

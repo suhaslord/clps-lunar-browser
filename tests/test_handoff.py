@@ -23,7 +23,7 @@ def test_browser_can_read_api_and_errors():
     ).headers
 
 
-def test_horizon_exposes_real_profile_and_explicit_missing_coverage():
+def test_horizon_exposes_real_profiles_for_all_named_sites():
     response = client.get("/api/sites/athena-im2/horizon")
     assert response.status_code == 200
     result = response.json()
@@ -34,9 +34,10 @@ def test_horizon_exposes_real_profile_and_explicit_missing_coverage():
     assert profile["azimuth_step"] == 0.5
     assert profile["pixel_resolution_m"] == 80
     assert profile["source"].endswith("LDEM_80S_80MPP_ADJ.TIF")
-    assert client.get("/api/sites/odysseus-im1/horizon").json() == {
-        "site": "odysseus-im1", "terrain_available": False, "profile": None,
-    }
+    odysseus = client.get("/api/sites/odysseus-im1/horizon").json()
+    assert odysseus["terrain_available"] is True
+    assert odysseus["profile"]["site_id"] == "odysseus-im1"
+    assert odysseus["profile"]["pixels_per_degree"] == 64
     assert client.get("/api/sites/unknown/horizon").status_code == 404
 
 
@@ -46,7 +47,7 @@ def test_horizon_failure_is_not_reported_as_missing_coverage(monkeypatch):
     def broken_profile(*_):
         raise HorizonError("invalid profile")
 
-    monkeypatch.setattr("backend.app.load_profile", broken_profile)
+    monkeypatch.setattr("backend.app.terrain_profile", broken_profile)
     assert client.get("/api/sites/athena-im2/horizon").status_code == 503
 
 
@@ -69,7 +70,7 @@ def test_coordinate_summary_rejects_invalid_requests(params):
 @pytest.mark.skipif(not KERNELS_AVAILABLE, reason="SPICE kernels not installed")
 def test_real_summary_uses_selected_coordinates_and_distinguishes_terrain():
     assert client.get("/ready").status_code == 200
-    coordinate = client.get("/api/summary", params={"lat": -84.79, "lon": 29.2, **WINDOW})
+    coordinate = client.get("/api/summary", params={"lat": -84.79, "lon": 29.2, "terrain": False, **WINDOW})
     terrain = client.get("/api/sites/athena-im2/summary", params=WINDOW)
     assert coordinate.status_code == terrain.status_code == 200
     flat = coordinate.json()
@@ -83,4 +84,7 @@ def test_real_summary_uses_selected_coordinates_and_distinguishes_terrain():
     assert masked["sunlight_percent"] == 0
     assert masked["longest_darkness_minutes"] == 70
     fallback = client.get("/api/sites/odysseus-im1/summary", params=WINDOW)
-    assert fallback.json()["horizon_mode"] == "flat"
+    assert fallback.json()["horizon_mode"] == "terrain"
+    selected = client.get("/api/summary", params={"lat": -84.79, "lon": 29.2, **WINDOW}).json()
+    assert selected["sunlight_percent"] == masked["sunlight_percent"]
+    assert selected["terrain"] == masked["terrain"]

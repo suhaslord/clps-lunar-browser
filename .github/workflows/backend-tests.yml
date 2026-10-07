@@ -30,5 +30,14 @@ jobs:
         run: |
           python -m backend.setup_kernels
 
+      - name: cache global terrain
+        uses: actions/cache@v4
+        with:
+          path: backend/terrain/data/ldem_64_uint.tif
+          key: global-lola-64-${{ hashFiles('backend/setup_terrain.py') }}
+
+      - name: download global LOLA terrain
+        run: python -m backend.setup_terrain
+
       - name: run tests
         run: python -m pytest -q

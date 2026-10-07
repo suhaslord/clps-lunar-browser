@@ -197,3 +197,21 @@ def test_window_rejects_invalid_range_and_step():
             "2026-10-03T00:00:00Z",
             0,
         )
+
+
+@pytest.mark.skipif(not KERNELS_AVAILABLE, reason="SPICE kernels not installed")
+def test_surface_observer_height_has_expected_earth_parallax():
+    # Radial observer displacement changes elevation by -dh*cos(elevation)/distance.
+    ground = calculate_visibility(20, 30, "2026-10-03T18:00:00Z", 1737400)
+    raised = calculate_visibility(20, 30, "2026-10-03T18:00:00Z", 1747400)
+    import math
+    change = raised["earth"]["elevation"] - ground["earth"]["elevation"]
+    assert change < 0
+    assert change == pytest.approx(-math.degrees(10 / 380000 * math.cos(math.radians(ground["earth"]["elevation"]))), abs=0.0002)
+    assert raised["earth"]["azimuth"] == pytest.approx(ground["earth"]["azimuth"], abs=1e-10)
+
+
+@pytest.mark.parametrize("radius", [0, -1, float("nan"), float("inf")])
+def test_invalid_observer_radius_is_rejected(radius):
+    with pytest.raises(ValueError, match="observer radius"):
+        calculate_visibility(0, 0, "2026-10-03T18:00:00Z", radius)

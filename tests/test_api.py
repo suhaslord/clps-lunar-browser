@@ -32,7 +32,7 @@ def test_visibility_response_shape(monkeypatch):
     monkeypatch.setattr("backend.app.calculate_visibility", lambda *_: expected)
 
     response = client.get(
-        "/api/visibility?lat=-89.5&lon=135&time=2026-10-03T18:00:00Z"
+        "/api/visibility?terrain=false&lat=-89.5&lon=135&time=2026-10-03T18:00:00Z"
     )
     assert response.status_code == 200
     assert response.json() == expected
@@ -40,13 +40,13 @@ def test_visibility_response_shape(monkeypatch):
 
 def test_api_rejects_out_of_range_coordinates():
     response = client.get(
-        "/api/visibility?lat=91&lon=0&time=2026-10-03T18:00:00Z"
+        "/api/visibility?terrain=false&lat=91&lon=0&time=2026-10-03T18:00:00Z"
     )
     assert response.status_code == 422
 
 
 def test_api_rejects_invalid_timestamp():
-    response = client.get("/api/visibility?lat=0&lon=0&time=not-a-time")
+    response = client.get("/api/visibility?terrain=false&lat=0&lon=0&time=not-a-time")
     assert response.status_code == 422
     assert "ISO 8601" in response.json()["detail"]
 
@@ -54,7 +54,7 @@ def test_api_rejects_invalid_timestamp():
 def test_missing_kernels_return_service_unavailable(monkeypatch, tmp_path):
     monkeypatch.setenv("SPICE_KERNELS_DIR", str(tmp_path))
 
-    response = client.get("/api/visibility?lat=0&lon=0&time=2026-10-03T18:00:00Z")
+    response = client.get("/api/visibility?terrain=false&lat=0&lon=0&time=2026-10-03T18:00:00Z")
     assert response.status_code == 503
     assert "naif0012.tls" in response.json()["detail"]
 
@@ -75,7 +75,7 @@ def test_spice_calculation_error_returns_bad_gateway(monkeypatch):
         raise SpiceCalculationError("SPICE failed")
 
     monkeypatch.setattr("backend.app.calculate_visibility", fail_calculation)
-    response = client.get("/api/visibility?lat=0&lon=0&time=2026-10-03T18:00:00Z")
+    response = client.get("/api/visibility?terrain=false&lat=0&lon=0&time=2026-10-03T18:00:00Z")
 
     assert response.status_code == 502
     assert response.json()["detail"] == "SPICE failed"
@@ -92,7 +92,7 @@ def test_visibility_window_response_shape(monkeypatch):
     monkeypatch.setattr("backend.app.calculate_visibility_window", lambda *_: expected)
 
     response = client.get(
-        "/api/visibility/window?lat=-89.5&lon=135&start=2026-10-03T18:00:00Z"
+        "/api/visibility/window?terrain=false&lat=-89.5&lon=135&start=2026-10-03T18:00:00Z"
         "&end=2026-10-03T18:00:00Z&step_minutes=30"
     )
 
@@ -102,7 +102,7 @@ def test_visibility_window_response_shape(monkeypatch):
 
 def test_visibility_window_rejects_invalid_step():
     response = client.get(
-        "/api/visibility/window?lat=0&lon=0&start=2026-10-03T00:00:00Z"
+        "/api/visibility/window?terrain=false&lat=0&lon=0&start=2026-10-03T00:00:00Z"
         "&end=2026-10-03T01:00:00Z&step_minutes=0"
     )
 
@@ -130,7 +130,7 @@ def test_named_site_visibility_uses_site_coordinates(monkeypatch):
     }
     calls = []
 
-    def fake_calculation(latitude, longitude, time):
+    def fake_calculation(latitude, longitude, time, radius=None):
         calls.append((latitude, longitude, time))
         return expected.copy()
 
@@ -156,12 +156,14 @@ KERNELS_AVAILABLE = all((kernel_directory() / name).is_file() for name in KERNEL
 
 
 @pytest.mark.skipif(not KERNELS_AVAILABLE, reason="SPICE kernels not installed")
-def test_terrain_site_keeps_spice_angles_and_other_site_uses_flat_horizon():
+def test_all_named_sites_use_terrain_at_the_dem_observer():
     path = "/api/sites/athena-im2/visibility?time=2026-10-03T18:00:00Z"
     response = client.get(path)
     assert response.status_code == 200
     result = response.json()
-    original = calculate_visibility(-84.79, 29.2, "2026-10-03T18:00:00Z")
+    metadata = result["terrain"]
+    radius = metadata["datum_radius_m"] + metadata["site_elevation_m"] + metadata["observer_height_m"]
+    original = calculate_visibility(-84.79, 29.2, "2026-10-03T18:00:00Z", radius)
     for name in ("sun", "earth"):
         assert result[name]["azimuth"] == original[name]["azimuth"]
         assert result[name]["elevation"] == original[name]["elevation"]
@@ -173,8 +175,8 @@ def test_terrain_site_keeps_spice_angles_and_other_site_uses_flat_horizon():
     fallback = client.get(
         "/api/sites/odysseus-im1/visibility?time=2026-10-03T18:00:00Z"
     ).json()
-    assert fallback["sun"] == calculate_visibility(-80.13, 1.44, fallback["time"])["sun"]
-    assert "terrain_horizon" not in fallback["sun"]
+    assert fallback["horizon_mode"] == "terrain"
+    assert "terrain_horizon" in fallback["sun"]
 
     blocked = client.get(
         "/api/sites/athena-im2/visibility?time=2026-10-15T00:00:00Z"
@@ -203,7 +205,7 @@ def test_named_site_window_matches_single_time_with_terrain():
         "/api/sites/odysseus-im1/visibility?time=" + fallback[0]["time"]
     ).json()
     assert fallback[0]["sun"] == first["sun"]
-    assert "terrain_horizon" not in fallback[0]["sun"]
+    assert "terrain_horizon" in fallback[0]["sun"]
 
     summary = client.get("/api/sites/athena-im2/summary?" + query)
     assert summary.status_code == 200
@@ -215,7 +217,7 @@ def test_window_request_limits_and_summary_validation():
     oversized = (
         "start=2026-10-03T00:00:00Z&end=2026-10-04T09:20:00Z&step_minutes=1"
     )
-    assert client.get("/api/visibility/window?lat=0&lon=0&" + oversized).status_code == 422
+    assert client.get("/api/visibility/window?terrain=false&lat=0&lon=0&" + oversized).status_code == 422
     assert client.get("/api/sites/athena-im2/visibility/window?" + oversized).status_code == 422
     assert client.get("/api/sites/athena-im2/summary?" + oversized).status_code == 422
     assert client.get(

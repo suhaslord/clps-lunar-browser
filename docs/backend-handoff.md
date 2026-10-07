@@ -1,31 +1,38 @@
 # Backend handoff
 
-The backend accepts east-positive longitude in -180..180 degrees, latitude in -90..90 degrees, and timestamps with a timezone. Responses use UTC. All routes are GET requests.
+The backend covers named CLPS sites and arbitrary lunar coordinates for Sun/Earth visibility, terrain skylines, timelines and mission planning summaries. It preserves the existing FastAPI/SPICE architecture and project objective.
+
+## Start the backend
+
+Follow the root README: install requirements, run `python -m backend.setup_kernels`, run **`python -m backend.setup_terrain`**, then start Uvicorn. The global dataset download is 506 MiB; it stays outside Git. Both setup commands verify SHA-256 checksums, reuse verified local data and support `--check` for offline verification. Use `LUNAR_DEM_PATH` for another storage path; use `--path` when downloading there. `/ready` checks the required data.
 
 ## Connect the website
 
-Run the backend using the root README. Set your frontend's API base URL to `http://127.0.0.1:8000` for local development, or proxy `/api` to that server. Use the backend's named-site ID when selecting Athena so the terrain profile is applied; copying its coordinates to the generic coordinate endpoint produces a flat-horizon estimate.
+Use `http://127.0.0.1:8000` as the local API base or proxy `/api` to it. Default CORS allows both local Vite origins on port 5173. Configure `CORS_ORIGINS` before starting the server for a hosted frontend.
 
 | Website feature | Route |
 | --- | --- |
 | Site picker | `/api/sites` |
-| Selected coordinate + timestamp | `/api/visibility?lat=...&lon=...&time=...` |
-| Selected coordinate + timeline | `/api/visibility/window?lat=...&lon=...&start=...&end=...&step_minutes=30` |
-| Selected coordinate + planning summary | `/api/summary?lat=...&lon=...&start=...&end=...&step_minutes=30` |
-| Named site + timestamp | `/api/sites/athena-im2/visibility?time=...` |
-| Named site + timeline | `/api/sites/athena-im2/visibility/window?start=...&end=...&step_minutes=30` |
-| Named site + planning summary | `/api/sites/athena-im2/summary?start=...&end=...&step_minutes=30` |
-| Terrain skyline and provenance | `/api/sites/athena-im2/horizon` |
+| Coordinate + timestamp | `/api/visibility?lat=...&lon=...&time=...` |
+| Coordinate + timeline | `/api/visibility/window?lat=...&lon=...&start=...&end=...&step_minutes=30` |
+| Coordinate + planning summary | `/api/summary?lat=...&lon=...&start=...&end=...&step_minutes=30` |
+| Coordinate terrain skyline | `/api/horizon?lat=...&lon=...` |
+| Named site + timestamp | `/api/sites/odysseus-im1/visibility?time=...` |
+| Named site + timeline | `/api/sites/odysseus-im1/visibility/window?start=...&end=...&step_minutes=30` |
+| Named site + summary | `/api/sites/odysseus-im1/summary?start=...&end=...&step_minutes=30` |
+| Named site terrain skyline | `/api/sites/odysseus-im1/horizon` |
 
-Example browser request (use `URLSearchParams` so timezone offsets are encoded):
+Terrain is enabled by default everywhere. Coordinates exactly matching Athena use the same 80 m profile as its named route. Other positions use the global LOLA DEM. Add `terrain=false` to visibility/timeline/summary requests for an explicitly labelled flat estimate. No request silently falls back when terrain data is missing.
+
+Example browser request; `URLSearchParams` correctly encodes timezone offsets:
 
 ```js
 const query = new URLSearchParams({
+  lat: '-80.13', lon: '1.44',
   start: '2026-10-15T00:00:00Z',
-  end: '2026-10-16T00:00:00Z',
-  step_minutes: '30',
+  end: '2026-10-16T00:00:00Z', step_minutes: '30',
 })
-const response = await fetch(`${apiBase}/api/sites/athena-im2/summary?${query}`)
+const response = await fetch(`${apiBase}/api/summary?${query}`)
 if (!response.ok) {
   const error = await response.json()
   throw new Error(error.detail ?? 'Calculation unavailable')
@@ -33,18 +40,16 @@ if (!response.ok) {
 const summary = await response.json()
 ```
 
-Show summary percentages, longest darkness/communications blackout, and the returned UTC windows. Use `horizon_mode` to label the result as `terrain` or `flat`. Do not turn a failed request into zero sunlight or zero communications; show the error and let the user retry.
+Show the percentages, longest outages and UTC windows. `horizon_mode` labels terrain or flat; `terrain` provides source, resolution, range and observer height. Render failures as errors rather than zero sunlight or communications.
 
-The horizon response is `{site, terrain_available, profile}`. A profile's `horizon[i]` is the skyline elevation in degrees at azimuth `i * azimuth_step` (north = 0, east = 90). Plot it under the Sun/Earth markers. A missing profile returns `terrain_available: false` and `profile: null`; it is not an all-zero measured terrain horizon. Unknown sites return 404, invalid profiles return 503.
+For the skyline, fetch `/api/horizon` for the same coordinates or the named site's `/horizon`. Plot `profile.horizon[i]` at `i * profile.azimuth_step` degrees under Sun/Earth markers. North is 0° and east is 90°. The terrain used by single-time, timeline and summary routes is identical.
 
 ## Scope and accuracy
 
-- Sun/Earth directions use NAIF SPICE and the documented DE440 kernel set. Existing tests compare five cases against saved JPL Horizons references with a 0.02 degree tolerance.
-- Athena's skyline comes from NASA PGDA LOLA, 80 m/pixel, within 40 km, at an assumed 2 m observer height. The closest 160 m is excluded. The profile includes lunar curvature and records its data source, coordinate frame, and elevation datum.
-- Body directions still use the reference surface at zero altitude; the skyline uses the DEM surface. This is an approximation, not a complete high-precision surface-observer model.
-- Arbitrary coordinates and Odysseus have flat-horizon visibility. There is no global terrain service behind coordinate picking.
-- Visibility uses the centre of each body. Earth visibility indicates geometric line of sight, not guaranteed communications; sunlight visibility does not estimate power generation.
-- Timeline transitions are sampled, with no substep crossing refinement. A 30 minute step gives approximate windows at that cadence. Requests are limited to 2,000 samples.
-- The map branch's NASA GLB is a textured sphere without elevation. Its illustrative light is not backend Sun illumination. It does not supply terrain to the API.
+- SPICE directions and terrain geometry use the same radial observer at DEM elevation plus an assumed 2 m height. Flat mode preserves the original reference-surface calculation.
+- Athena uses 80 m LOLA terrain; global coverage uses 64 pixels/degree, about 474 m north/south. Terrain within 40 km is included; the nearest two cells are excluded. Smaller landforms and obstructions beyond that range can be missed.
+- Visibility uses body centres, and timelines are sampled at the selected cadence. Earth line of sight does not guarantee communications; sunlight visibility does not estimate electrical power.
+- The terrain source uses DE421 `MOON_ME`, closely aligned to the runtime DE440 `MOON_ME_DE440_ME421` frame. Exact poles use the longitude-defined local north/east basis. See [terrain documentation](../backend/terrain/README.md).
+- The map branch's NASA GLB is a textured sphere without elevation. Its lighting does not represent backend Sun illumination. A sourced Blender terrain mesh can be displayed through Cesium while the backend continues these calculations.
 
-Terrain meshes made in Blender should use sourced elevation data and preserve lunar coordinates, metres, and the reference datum. They can be displayed through Cesium while the backend continues to calculate the visibility results.
+Full response and error details are in [the API contract](api.md). The automated workflow verifies kernels, downloads/caches the global DEM, and runs geometry and API tests.

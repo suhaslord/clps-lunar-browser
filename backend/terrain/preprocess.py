@@ -31,7 +31,7 @@ def build_profile(
         raise ValueError("preprocessing settings must be finite")
     if not (max_distance_m > min_distance_m > 0 and observer_height_m >= 0):
         raise ValueError("invalid terrain distance or observer height")
-    count = 360 / azimuth_step if azimuth_step > 0 else 0
+    count = 360 / azimuth_step if azimuth_step > 0 else 0.0
     if not (count.is_integer() and 1 <= count <= 3600):
         raise ValueError("azimuth step must divide 360 degrees")
 
